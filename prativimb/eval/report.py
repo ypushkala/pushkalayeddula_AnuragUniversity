@@ -342,7 +342,9 @@ def write_markdown(m: dict) -> str:
     L.append(f"\nLow glucose (secondary): {lw['events']} episodes below 70 mg/dL in test patients; "
              f"point forecast below 70 within 2 h flagged {lw['sensitivity'] * 100:.0f}% in advance "
              f"(median lead {lw['median_lead_min'] or 0:.0f} min, {lw['false_alarms_per_patient_day']:.2f} false alarms per patient day). "
-             "Lows are rare in this cohort, so treat this as indicative only.\n")
+             "Most lows in this cohort are brief dips in people without diabetes and overnight sensor compression "
+             "artefacts, which a meal driven model cannot anticipate. Low forecasting is a secondary output, not a "
+             "validated feature.\n")
     L.append("![Alert trade off](figures/alert_tradeoff.png)\n")
     L.append("### Conformal prediction intervals (90% target)\n")
     L.append("| Horizon | CQR coverage | CQR median width | Plain split coverage | Plain split width | Coverage below 70 | 70 to 180 | above 180 |")
@@ -355,8 +357,9 @@ def write_markdown(m: dict) -> str:
                  f"{br['below 70']['coverage'] * 100:.0f}% (n={br['below 70']['n']}) | "
                  f"{br['70 to 180']['coverage'] * 100:.1f}% | {br['above 180']['coverage'] * 100:.1f}% |")
     L.append("\nConformalised quantile regression (Romano et al. 2019) gives intervals that widen when the "
-             "situation is uncertain (for example around unlogged meals) and narrow overnight, at the same marginal "
-             "coverage as a fixed width split interval.\n")
+             "situation is uncertain (for example around unlogged meals) and narrow overnight. At the same marginal "
+             "coverage they are 8 to 16 percent narrower (median) than a fixed width split interval. Coverage falls "
+             "in the hypoglycaemic range, where training data are sparse.\n")
     L.append("![Coverage](figures/conformal_coverage.png)\n")
     L.append("## 2. Cardiovascular risk flag (Event B)\n")
     L.append(f"Windows: {c['n_windows']} seven day windows from test patients, {c['n_positive']} labelled positive "

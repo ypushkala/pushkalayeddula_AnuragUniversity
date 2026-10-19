@@ -216,8 +216,9 @@ def apply_scenario(pp: Prepared, k: int, H: int, sc: Scenario):
     if sc.sleep_hours is not None or sc.night_shift:
         hours = s.sleep_hours.copy()
         if sc.sleep_hours is not None:
+            # "What if the last three nights had been this long": the debt the twin uses spans three nights.
             last = min((k * STEP) // 1440, config.N_DAYS - 1)
-            hours[last] = sc.sleep_hours
+            hours[max(0, last - 2): last + 1] = sc.sleep_hours
         smod, _ = modifier_grids(s, sleep_hours=hours, force_night=sc.night_shift)
         pp = Prepared(**{**pp.__dict__, "smod": smod})
     u, obs = build(pp, np.array([k]), H)

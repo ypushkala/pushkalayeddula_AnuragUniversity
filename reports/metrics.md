@@ -22,7 +22,7 @@ RMSE in mg/dL against the CGM reading at the target time. n = 127,096 forecasts 
 | Horizon | Zone A | Zone B | Zone C | Zone D | Zone E |
 |---|---:|---:|---:|---:|---:|
 | 30 min | 94.2% | 4.4% | 0.0% | 1.4% | 0.0% |
-| 60 min | 85.5% | 12.0% | 0.0% | 2.5% | 0.0% |
+| 60 min | 85.4% | 12.1% | 0.0% | 2.5% | 0.0% |
 | 120 min | 79.3% | 17.7% | 0.1% | 3.0% | 0.0% |
 
 ![Clarke grid](figures/clarke_grid_60min.png)
@@ -35,16 +35,16 @@ Two tiers are deployed. **Watch**: the hybrid point forecast crosses 180 within 
 
 | Policy | Spikes | Sensitivity | Precision | Median lead time | False alarms per patient day |
 |---|---:|---:|---:|---:|---:|
-| **Alert tier: lower bound of 50% interval (deployed)** | 1599 | 67.1% | 85.3% | 30 min | 0.20 |
-| **Watch tier: hybrid point forecast (deployed)** | 1599 | 90.3% | 69.8% | 78 min | 0.66 |
+| **Alert tier: lower bound of 50% interval (deployed)** | 1599 | 67.1% | 85.2% | 30 min | 0.20 |
+| **Watch tier: hybrid point forecast (deployed)** | 1599 | 90.3% | 69.8% | 75 min | 0.65 |
 | Lower bound of 90% interval | 1599 | 43.7% | 88.8% | 25 min | 0.10 |
-| LightGBM only, point forecast | 1599 | 89.4% | 68.6% | 70 min | 0.68 |
+| LightGBM only, point forecast | 1599 | 89.4% | 68.7% | 70 min | 0.68 |
 | Twin only, point forecast | 1599 | 87.2% | 56.9% | 105 min | 0.94 |
 
 The lower bound tier trades lead time for precision: at 2 hours the interval is wide, so a confident call usually comes 25 to 35 minutes before onset. The watch tier gives the longer warning with more false alarms, which is why it is not pushed.
 
 
-Low glucose (secondary): 732 episodes below 70 mg/dL in test patients; point forecast below 70 within 2 h flagged 22% in advance (median lead 40 min, 0.09 false alarms per patient day). Lows are rare in this cohort, so treat this as indicative only.
+Low glucose (secondary): 732 episodes below 70 mg/dL in test patients; point forecast below 70 within 2 h flagged 22% in advance (median lead 40 min, 0.09 false alarms per patient day). Most lows in this cohort are brief dips in people without diabetes and overnight sensor compression artefacts, which a meal driven model cannot anticipate. Low forecasting is a secondary output, not a validated feature.
 
 ![Alert trade off](figures/alert_tradeoff.png)
 
@@ -52,12 +52,12 @@ Low glucose (secondary): 732 episodes below 70 mg/dL in test patients; point for
 
 | Horizon | CQR coverage | CQR median width | Plain split coverage | Plain split width | Coverage below 70 | 70 to 180 | above 180 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| 30 min | 89.8% | 36 mg/dL | 89.9% | 39 mg/dL | 73% (n=4087) | 91.5% | 87.1% |
-| 60 min | 89.2% | 50 mg/dL | 89.5% | 60 mg/dL | 64% (n=4036) | 91.9% | 84.3% |
-| 90 min | 88.7% | 57 mg/dL | 89.2% | 71 mg/dL | 60% (n=4019) | 91.9% | 82.7% |
+| 30 min | 89.8% | 36 mg/dL | 89.9% | 39 mg/dL | 73% (n=4087) | 91.5% | 87.2% |
+| 60 min | 89.2% | 50 mg/dL | 89.4% | 60 mg/dL | 64% (n=4036) | 91.9% | 84.3% |
+| 90 min | 88.7% | 57 mg/dL | 89.2% | 71 mg/dL | 60% (n=4019) | 92.0% | 82.7% |
 | 120 min | 88.7% | 64 mg/dL | 88.8% | 76 mg/dL | 59% (n=4025) | 92.1% | 82.3% |
 
-Conformalised quantile regression (Romano et al. 2019) gives intervals that widen when the situation is uncertain (for example around unlogged meals) and narrow overnight, at the same marginal coverage as a fixed width split interval.
+Conformalised quantile regression (Romano et al. 2019) gives intervals that widen when the situation is uncertain (for example around unlogged meals) and narrow overnight. At the same marginal coverage they are 8 to 16 percent narrower (median) than a fixed width split interval. Coverage falls in the hypoglycaemic range, where training data are sparse.
 
 ![Coverage](figures/conformal_coverage.png)
 
@@ -68,11 +68,11 @@ Windows: 675 seven day windows from test patients, 17 labelled positive (event i
 | Detector | AUROC | AUPRC | Sensitivity at 90% specificity | Sensitivity at 95% specificity |
 |---|---:|---:|---:|---:|
 | Isolation forest (unsupervised) | 0.769 (0.65 to 0.92) | 0.243 (0.02 to 0.58) | 41% | 35% |
-| Baseline z score composite | 0.918 (0.87 to 0.98) | 0.315 (0.07 to 0.59) | 76% | 41% |
-| LightGBM (supervised) | 0.951 (0.90 to 0.99) | 0.349 (0.10 to 0.65) | 88% | 65% |
-| **Stacked ensemble** | 0.952 (0.90 to 0.99) | 0.351 (0.11 to 0.64) | 88% | 65% |
+| Baseline z score composite | 0.919 (0.87 to 0.98) | 0.315 (0.07 to 0.59) | 76% | 41% |
+| LightGBM (supervised) | 0.953 (0.90 to 0.99) | 0.356 (0.11 to 0.65) | 88% | 65% |
+| **Stacked ensemble** | 0.954 (0.90 to 0.99) | 0.358 (0.11 to 0.65) | 88% | 65% |
 
-Operating point (threshold set at 95% specificity on calibration patients): test specificity 94.1%, 5 of 6 events flagged in the 3 days before, median lead 3 days, 7.6% of patient days flagged. Brier score 0.020.
+Operating point (threshold set at 95% specificity on calibration patients): test specificity 94.4%, 5 of 6 events flagged in the 3 days before, median lead 3 days, 7.3% of patient days flagged. Brier score 0.020.
 
 ![Cardio performance](figures/cardio_performance.png)
 
