@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { api, dayMonth, dayToDate, fmt, fullTime } from "../api";
 import { PlotFigure, baseStyle } from "../components/PlotFigure";
+import { TableView } from "../components/TableView";
 import { useLive, useLiveData } from "../live";
 
 const ROWS: { key: string; name: string; unit: string; digits: number; scale?: number }[] = [
@@ -28,8 +29,9 @@ export function Cardio() {
 
   const shade = (z: number | null) => {
     if (z === null || !isFinite(z) || z <= 0.25) return { background: "transparent", color: "var(--ink)" };
-    const a = Math.min(z, 3) / 3;
-    return { background: `color-mix(in srgb, var(--ink) ${Math.round(a * 62)}%, var(--paper))`, color: a > 0.55 ? "var(--paper)" : "var(--ink)" };
+    // Four ordinal steps that skip the mid greys, where neither dark nor light text reaches 4.5:1.
+    const mix = z < 1 ? 15 : z < 2 ? 30 : z < 3 ? 70 : 82;
+    return { background: `color-mix(in srgb, var(--ink) ${mix}%, var(--paper))`, color: mix >= 70 ? "var(--paper)" : "var(--ink)" };
   };
 
   const sleepRows = v.dates.flatMap((d, i) => [
@@ -135,13 +137,20 @@ export function Cardio() {
               {Object.entries(stageColor).map(([k, c]) => <span key={k}><i className="band" style={{ background: c, outline: k === "Awake" ? `1px solid ${p.rule}` : undefined }} />{k}</span>)}
             </div>
           </div>
-          <PlotFigure spec={sleepSpec} ariaLabel="Sleep stages per night" />
+          <TableView title="Sleep stages per night" columns={["Night", "Deep, min", "REM, min", "Core, min", "Awake, min"]}
+            rows={v.dates.map((d, i) => [dayMonth(d), fmt(byKey.deep_min?.values[i]), fmt(byKey.rem_min?.values[i]),
+              fmt(byKey.core_min?.values[i]), fmt(byKey.awake_min?.values[i])])}>
+            <PlotFigure spec={sleepSpec} ariaLabel="Sleep stages per night" />
+          </TableView>
         </div>
         <div>
           <div className="chart-title"><h2>Risk trajectory</h2>
             <div className="legend"><span><i style={{ borderColor: p.accent }} />Ensemble risk</span><span><i className="dot" style={{ background: p.alert }} />Flagged day</span></div>
           </div>
-          <PlotFigure spec={trajSpec} ariaLabel="Daily cardiovascular risk" />
+          <TableView title="Daily cardiovascular risk" columns={["Window ending", "Risk of event in 3 days", "Flagged"]}
+            rows={traj.map(t => [dayMonth(t.d), t.risk === null ? "after event" : `${fmt(t.risk * 100, 1)}%`, t.flag ? "yes" : ""])}>
+            <PlotFigure spec={trajSpec} ariaLabel="Daily cardiovascular risk" />
+          </TableView>
           <div className="block" style={{ marginTop: 14 }}>
             <span className="label">Top contributing factors, window ending {dayMonth(dayToDate(v.end_day))}</span>
             {v.factors.length ? (

@@ -50,6 +50,7 @@ export function ForecastChart({ tl, fc }: { tl: Timeline; fc: Forecast | null })
   });
 
   const stageFill: Record<string, string> = { deep: p.accent, rem: p.ink3, core: p.ruleStrong, awake: p.paper2 };
+  const planned = (fc?.entries ?? []).filter(e => e.type === "planned").map(e => ({ ...e, t: d(e.t) }));
   const lanes = () => ({
     ...M, height: 78, marginTop: 4, marginBottom: 4, style: baseStyle(p.ink3),
     x: { ...xScale, axis: null },
@@ -62,6 +63,8 @@ export function ForecastChart({ tl, fc }: { tl: Timeline; fc: Forecast | null })
       Plot.dot(tl.doses.filter(x => x.drug === "metformin" || !x.taken).map(x => ({ ...x, t: d(x.t) })),
         { x: "t", y: () => "Doses", r: 3.5, fill: (x: any) => (x.taken ? p.ink2 : p.paper), stroke: p.ink2, strokeWidth: 1.4 }),
       Plot.text(tl.doses.filter(x => !x.taken).map(x => ({ ...x, t: d(x.t) })), { x: "t", y: () => "Doses", text: (x: any) => `${x.drug} missed`, dx: 7, textAnchor: "start", fill: p.ink, fontSize: 10.5 }),
+      Plot.dot(planned, { x: "t", y: () => "Meals", r: 4, fill: p.paper, stroke: p.accent, strokeWidth: 1.6 }),
+      Plot.text(planned, { x: "t", y: () => "Meals", text: (m: any) => `planned ${Math.round(m.carbs)} g`, dx: 7, textAnchor: "start", fill: p.ink2, fontSize: 10.5 }),
       Plot.tip(tl.meals.map(m => ({ ...m, t: d(m.t) })), Plot.pointerX({ x: "t", y: () => "Meals", fill: p.paper, stroke: p.ruleStrong,
         title: (m: any) => `${hhmm(m.t)}  ${m.description}, about ${fmt(m.carbs)} g` })),
     ],
@@ -102,6 +105,10 @@ export function ForecastChart({ tl, fc }: { tl: Timeline; fc: Forecast | null })
         </div>
       </div>
       <PlotFigure spec={main} ariaLabel="Glucose history and forecast" />
+      <p className="small muted band-note">
+        The shaded band is the likely range: 9 in 10 future readings are expected to fall inside it. A red dot marks a confident
+        crossing of 180 (at least a 3 in 4 chance).
+      </p>
       <div className="label" style={{ margin: "4px 0 0" }}>Meals, doses and sleep</div>
       <PlotFigure spec={lanes} ariaLabel="Meals, medication doses and sleep stages" />
       <div className="legend" style={{ margin: "0 0 2px 44px" }}>
@@ -110,6 +117,7 @@ export function ForecastChart({ tl, fc }: { tl: Timeline; fc: Forecast | null })
         <span><i className="band" style={{ background: p.accent }} />Deep</span>
         <span><i className="band" style={{ background: p.ink3 }} />REM</span>
         <span><i className="band" style={{ background: p.ruleStrong }} />Core</span>
+        <span><i className="dot" style={{ border: `1.6px solid ${p.accent}` }} />Planned meal</span>
       </div>
       <div className="label" style={{ margin: "6px 0 0" }}>Steps per 5 min</div>
       <PlotFigure spec={steps} ariaLabel="Steps" />

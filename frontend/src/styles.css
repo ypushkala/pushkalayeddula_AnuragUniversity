@@ -9,7 +9,7 @@
   --rule-strong: #b9b3a6;
   --ink: #1b1b19;
   --ink-2: #4a4843;
-  --ink-3: #75726b;
+  --ink-3: #6a675f;
   --accent: #17635e;
   --accent-wash: rgba(23, 99, 94, 0.12);
   --series-grey: #9c988f;
@@ -313,4 +313,137 @@ table.heat { border-collapse: separate; border-spacing: 2px; font-size: 12.5px; 
   .whatif, .two { grid-template-columns: 1fr; }
   .whatif > aside { border: 0; padding: 0; }
   .whatif > section { padding: 16px 0 0; }
+}
+
+/* Version 1.1: interaction states, accessibility, small screens ------------------------------ */
+
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); border: 0; }
+.skip-link { position: absolute; left: 12px; top: -40px; z-index: 50; background: var(--ink); color: var(--paper); padding: 6px 10px; border-radius: 3px; }
+.skip-link:focus { top: 8px; }
+main:focus { outline: none; }
+.mast-tools { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.clinician input { width: 110px; font: inherit; font-size: 12px; color: var(--ink); background: transparent; border: 0;
+  border-bottom: 1px solid var(--rule-strong); padding: 2px 0; }
+.head-tools { display: flex; gap: 8px; align-items: center; }
+.kbd-hint { margin-left: auto; }
+.link-btn { font: inherit; font-size: 12px; background: none; border: 0; padding: 2px 0; color: var(--ink-2); cursor: pointer;
+  text-decoration: underline; text-decoration-color: var(--rule-strong); text-underline-offset: 3px; }
+.link-btn:hover { color: var(--ink); }
+.btn.small-btn { margin-top: 6px; }
+.btn:disabled { opacity: 0.5; cursor: default; }
+tr:focus-visible, .row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* Skeletons hold the final layout while data loads. */
+.skeleton-line { display: inline-block; height: 10px; border-radius: 2px; background: var(--paper-3); }
+.skeleton-block { width: 100%; border-radius: 2px; background: var(--paper-2); margin: 6px 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton-line, .skeleton-block { animation: pulse 1.6s ease-in-out infinite; }
+}
+@keyframes pulse { 50% { opacity: 0.55; } }
+
+/* Ward */
+.ward thead th { position: sticky; top: 61px; background: var(--paper); z-index: 2; }
+.ward.compact td { padding: 3px 10px; }
+.ward.compact .sub { display: none; }
+.ward tr.cursor td { background: var(--paper-2); }
+.flag.acked { color: var(--ink-2); }
+.since { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; font-size: 13px; padding: 8px 0;
+  border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); margin: 2px 0 10px; }
+.since .label { margin-right: 4px; }
+.since .link-btn { margin-left: auto; }
+.show-sm { display: none; }
+
+/* Alert cards */
+.card.acked { border-left-color: var(--rule-strong); }
+.card.acked .t { color: var(--ink-2); }
+.ack { font-size: 12px; color: var(--ink-3); margin-top: 5px; }
+.ack-form { display: grid; gap: 6px; margin-top: 8px; font-size: 12px; }
+.ack-form label { display: flex; align-items: center; gap: 6px; }
+.ack-form input[type="text"] { font: inherit; font-size: 12px; padding: 4px 6px; border: 1px solid var(--rule-strong);
+  border-radius: 3px; background: var(--paper); color: var(--ink); }
+
+/* Meal entry */
+.meal-form { display: grid; gap: 8px; font-size: 12.5px; }
+.meal-form label { display: grid; gap: 3px; color: var(--ink-2); }
+.meal-form .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.meal-form select, .meal-form input { width: 100%; }
+.meal-form .btn.primary { justify-self: start; }
+
+/* What if */
+.segmented { display: inline-flex; border: 1px solid var(--rule-strong); border-radius: 3px; margin-top: 8px; }
+.segmented button { font: inherit; font-size: 12px; background: none; border: 0; padding: 5px 10px; color: var(--ink-2); cursor: pointer; }
+.segmented button + button { border-left: 1px solid var(--rule-strong); }
+.segmented button.on { background: var(--ink); color: var(--paper); }
+table.levers tr.row { cursor: pointer; }
+table.levers tr.row:hover td { background: var(--paper-2); }
+
+/* Table twins for charts */
+.table-scroll { max-height: 360px; overflow: auto; border-top: 1px solid var(--rule); margin: 6px 0; }
+.data-table { border-collapse: collapse; font-size: 12.5px; width: 100%; }
+.data-table th { position: sticky; top: 0; background: var(--paper); text-align: right; font-weight: 500; font-size: 11px;
+  letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); padding: 6px 8px; border-bottom: 1px solid var(--rule-strong); }
+.data-table td { text-align: right; padding: 3px 8px; border-bottom: 1px solid var(--rule); }
+.data-table th:first-child, .data-table td:first-child { text-align: left; }
+.band-note { margin: 2px 0 6px 44px; }
+
+/* Patient view: large type, one column, prints on one page */
+.share { max-width: 760px; margin: 0 auto; padding: 28px 22px 40px; font-size: 20px; line-height: 1.5;
+  font-family: var(--sans), "Noto Sans Devanagari", "Noto Sans Tamil", sans-serif; }
+.share h1 { font-size: 32px; margin: 18px 0 12px; font-family: var(--serif), "Noto Sans Devanagari", "Noto Sans Tamil", serif; }
+.share h2 { font-size: 22px; margin: 24px 0 8px; font-family: var(--serif), "Noto Sans Devanagari", "Noto Sans Tamil", serif; }
+.share-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 14px; }
+.share-tools a.small { margin-right: auto; }
+.share-now { font-size: 22px; }
+.share-levers { padding-left: 24px; margin: 0; }
+.share-levers li { margin: 10px 0; padding-bottom: 10px; border-bottom: 1px solid var(--rule); }
+.share-levers .what { display: block; font-weight: 600; }
+.share-levers .gain { display: block; color: var(--accent); }
+.share-disclaimer { border-left: 2px solid var(--ink); padding-left: 12px; font-size: 17px; margin-top: 24px; }
+
+@media (max-width: 1180px) {
+  .twin-layout .col-side { order: 1; }
+  .twin-layout .col-main { order: 2; }
+  .twin-layout .col-ehr { order: 3; }
+}
+@media (max-width: 1000px) {
+  .hide-md { display: none; }
+  .kbd-hint { display: none; }
+}
+@media (max-width: 760px) {
+  html, body { font-size: 13.5px; }
+  .masthead { grid-template-columns: 1fr; gap: 8px; padding: 10px 14px; position: static; }
+  .brand-sub { display: none; }
+  .mast-tools { justify-content: flex-start; gap: 10px; }
+  .clock { gap: 8px; }
+  .clock-time { white-space: nowrap; }
+  .filters { flex-wrap: wrap; gap: 6px 14px; }
+  /* Ward rows become two line cards: name and glucose, then the flags. */
+  table.ward, table.ward tbody { display: block; }
+  table.ward thead { display: none; }
+  table.ward tr.row { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; padding: 10px 2px;
+    border-bottom: 1px solid var(--rule); }
+  table.ward td { border: 0; padding: 0; }
+  table.ward td.c-flag, table.ward td.c-cv { grid-column: 1 / -1; }
+  .ward tr.cursor td { background: transparent; }
+  table.ward td.c-cv::before { content: attr(data-label) ": "; color: var(--ink-3); font-size: 12px; }
+  .clock-time { font-size: 12px; }
+  .clock .muted { display: none; }
+  main { padding: 14px 14px 32px; }
+  .hide-sm { display: none; }
+  .show-sm { display: inline; }
+  .page-head { flex-direction: column; align-items: stretch; }
+  .head-tools input { flex: 1; }
+  h1 { font-size: 22px; }
+  .ward thead th { position: static; }
+  .ward td { padding: 7px 6px; }
+  .stats { flex-wrap: wrap; }
+  .stat { padding-right: 12px; margin-right: 12px; }
+  .stat .v { font-size: 17px; }
+  .patient-head { flex-direction: column; align-items: flex-start; }
+  .patient-head > div:last-child { text-align: left !important; }
+  .tabs { gap: 18px; overflow-x: auto; }
+  table.compare { min-width: 0; width: 100%; }
+  .share { font-size: 18px; }
+  .share h1 { font-size: 26px; }
+  .footer { flex-direction: column; gap: 4px; padding: 10px 14px; }
 }

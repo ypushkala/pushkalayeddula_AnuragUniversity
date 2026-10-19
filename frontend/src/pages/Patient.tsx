@@ -1,8 +1,13 @@
-import { NavLink, Outlet, useOutletContext, useParams } from "react-router-dom";
+import { Link, NavLink, Outlet, useOutletContext, useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { api, dayMonth, fmt, hhmm, minuteToDate, signed, type Obs, type PatientDetail } from "../api";
 import { FactorBars } from "../components/FactorBars";
+import { Activity } from "../components/Activity";
 import { AgpChart } from "../components/AgpChart";
+import { AlertCards } from "../components/AlertCards";
+import { MealEntry } from "../components/MealEntry";
+import { SkeletonBlock } from "../components/Skeleton";
+import { TableView } from "../components/TableView";
 import { ForecastChart } from "../components/ForecastChart";
 import { useLiveData } from "../live";
 
@@ -38,6 +43,7 @@ export function Patient() {
           {detail.context.length > 0 && <div className="facts" style={{ marginTop: 2 }}>{detail.context.join(". ")}.</div>}
         </div>
         <div className="small muted" style={{ textAlign: "right" }}>
+          <Link className="btn" to={`/share/${p.id}`} style={{ marginBottom: 8, display: "inline-block" }}>Patient view</Link><br />
           Synthetic record. Held out from training ({detail.split} split).<br />
           Twin calibrated on days 1 to 7, fit error {fmt(detail.twin.calibration_rmse_fit)} mg/dL.
         </div>
@@ -134,32 +140,33 @@ export function TwinTab() {
   const tir = cgmVals.length ? (cgmVals.filter(v => v >= 70 && v <= 180).length / cgmVals.length) * 100 : null;
 
   return (
-    <div className="three">
-      <section><EhrColumn d={detail} /></section>
-      <section>
+    <div className="three twin-layout">
+      <section className="col-ehr" aria-label="Health record"><EhrColumn d={detail} /></section>
+      <section className="col-main" aria-label="Glucose and forecast">
         <div className="stats num">
           <div className="stat"><div className="label">Now</div><div className="v">{fmt(st?.glucose)}<small>mg/dL</small></div>
             <div className="d">{st?.trend30 !== null && st?.trend30 !== undefined ? `${signed(st.trend30)} in 30 min` : ""}</div></div>
           <div className="stat"><div className="label">Forecast peak, 2 h</div><div className="v">{fmt(st?.peak)}<small>mg/dL</small></div>
             <div className="d">{st ? `at ${hhmm(minuteToDate(st.peak_minute))}` : ""}</div></div>
-          <div className="stat"><div className="label">90% range at 2 h</div><div className="v">{fmt(h120?.lo)} to {fmt(h120?.hi)}</div>
-            <div className="d">conformal interval</div></div>
+          <div className="stat"><div className="label">Likely range at 2 h</div><div className="v">{fmt(h120?.lo)} to {fmt(h120?.hi)}</div>
+            <div className="d">9 in 10 readings fall inside</div></div>
           <div className="stat"><div className="label">Time in range, 12 h</div><div className="v">{fmt(tir)}<small>%</small></div>
             <div className="d">70 to 180 mg/dL</div></div>
         </div>
-        {tl ? <ForecastChart tl={tl} fc={fc} /> : <p className="empty">Loading timeline.</p>}
-        {agp && <AgpChart agp={agp} />}
+        {tl ? (
+          <TableView title="Glucose, last 12 hours and forecast"
+            columns={["Time", "CGM, mg/dL", "Forecast, mg/dL", "Likely range"]}
+            rows={[...tl.cgm.filter((_, i) => i % 3 === 0).map(r => [hhmm(r.t), fmt(r.v), "", ""]),
+                   ...(fc?.available ? fc.points.filter((_, i) => i % 3 === 0).map(p => [hhmm(p.t), "", fmt(p.mid), `${fmt(p.lo)} to ${fmt(p.hi)}`]) : [])]}>
+            <ForecastChart tl={tl} fc={fc} />
+          </TableView>
+        ) : <SkeletonBlock height={560} label="Loading glucose timeline" />}
+        {agp ? <AgpChart agp={agp} /> : <SkeletonBlock height={320} label="Loading glucose profile" />}
       </section>
-      <section>
+      <section className="col-side" aria-label="Alerts and actions">
         <div className="block">
           <span className="label">Active alerts</span>
-          {fc?.alerts?.length ? fc.alerts.map((a, i) => (
-            <div key={i} className={`card ${a.tier}`}>
-              <div className="t">{a.title}</div>
-              <div className="d">{a.detail}</div>
-              {a.reason && <div className="r">{a.reason}</div>}
-            </div>
-          )) : <div className="empty">No active alerts. Glucose expected to stay between 70 and 180 mg/dL for 2 h.</div>}
+          <AlertCards pid={id} cards={fc?.alerts} />
         </div>
         {fc?.explanation && (
           <div className="block">
@@ -172,6 +179,10 @@ export function TwinTab() {
           </div>
         )}
         <div className="block">
+          <span className="label">Tell the twin about a meal</span>
+          <MealEntry pid={id} entries={fc?.entries} />
+        </div>
+        <div className="block">
           <span className="label">Alert log, last 6 hours</span>
           {log && log.length ? (
             <table className="log num">
@@ -181,7 +192,7 @@ export function TwinTab() {
                     <td>{hhmm(e.t)}</td>
                     <td>
                       {e.low === "now" && <span className="alert-text">Low {fmt(e.glucose)} now. </span>}
-                      {e.low === "forecast" && <span>Low forecast, {fmt(e.low_value)}. </span>}
+                      {e.low === "forecast" && <span>Low likely within 60 min. </span>}
                       {e.tier === "alert" && <span className="alert-text">Alert: above 180 by {e.cross_time}, peak {fmt(e.peak)}.</span>}
                       {e.tier === "watch" && <span className="ink2">Watch: peak {fmt(e.peak)} at {e.peak_time}.</span>}
                     </td>
@@ -190,6 +201,10 @@ export function TwinTab() {
               </tbody>
             </table>
           ) : <div className="empty">{log ? "No alerts in the last 6 hours." : "Replaying the last 6 hours."}</div>}
+        </div>
+        <div className="block">
+          <span className="label">Activity</span>
+          <Activity pid={id} />
         </div>
       </section>
     </div>

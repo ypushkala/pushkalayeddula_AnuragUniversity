@@ -7,6 +7,14 @@ export interface Palette { paper: string; paper2: string; rule: string; ruleStro
 interface Live {
   clock: Clock | null; tick: number; connected: boolean; theme: "light" | "dark";
   setTheme: (t: "light" | "dark") => void; palette: Palette; refreshClock: () => void;
+  clinician: string; setClinician: (n: string) => void; refresh: () => void;
+}
+
+export function stored(key: string, fallback: string): string {
+  try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
+}
+export function store(key: string, value: string): void {
+  try { localStorage.setItem(key, value); } catch { /* storage may be unavailable */ }
 }
 
 const Ctx = createContext<Live | null>(null);
@@ -34,6 +42,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<"light" | "dark">(initialTheme);
   const [palette, setPalette] = useState<Palette>(() => readPalette());
   const lastStep = useRef<number>(-1);
+  const [clinician, setClinicianState] = useState<string>(() => stored("prativimb-clinician", "Dr Rao"));
+  const setClinician = (n: string) => { setClinicianState(n); store("prativimb-clinician", n); };
+  const refresh = () => setTick(t => t + 1);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -65,8 +76,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     return () => { window.clearTimeout(retry); if (ws) { ws.onclose = null; ws.close(); } };
   }, []);
 
-  const value = useMemo(() => ({ clock, tick, connected, theme, setTheme: setThemeState, palette, refreshClock }),
-    [clock, tick, connected, theme, palette]);
+  const value = useMemo(() => ({ clock, tick, connected, theme, setTheme: setThemeState, palette, refreshClock,
+    clinician, setClinician, refresh }), [clock, tick, connected, theme, palette, clinician]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

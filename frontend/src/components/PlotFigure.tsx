@@ -15,6 +15,9 @@ export function PlotFigure({ spec, height, ariaLabel }: { spec: (width: number) 
     if (!ref.current || width < 50) return;
     const el = Plot.plot({ width, height, ...spec(width) });
     el.setAttribute("aria-label", ariaLabel);
+    el.setAttribute("role", "img");
+    // The figure is one labelled image with a table twin; Plot's labels on inner groups are not valid ARIA there.
+    el.querySelectorAll("[aria-label]").forEach(n => { if (n !== el) n.removeAttribute("aria-label"); });
     ref.current.replaceChildren(el);
     return () => el.remove();
   });

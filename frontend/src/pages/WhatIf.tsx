@@ -1,11 +1,14 @@
 import * as Plot from "@observablehq/plot";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { api, fmt, hhmm, signed, type WhatIf as WhatIfRes, type WhatIfReq } from "../api";
+import { api, fmt, hhmm, signed, type Lever, type WhatIf as WhatIfRes, type WhatIfReq } from "../api";
 import { PlotFigure, baseStyle } from "../components/PlotFigure";
+import { SkeletonBlock } from "../components/Skeleton";
+import { TableView } from "../components/TableView";
 import { useLive } from "../live";
 
-const BASE: WhatIfReq = { walk_minutes: 0, swap: "none", shift_hours: 0, missed_dose: false, sleep_hours: null, night_shift: false };
+const NEUTRAL = { walk_minutes: 0, swap: "none", shift_hours: 0, missed_dose: false, sleep_hours: null, night_shift: false };
+const BASE: WhatIfReq = { ...NEUTRAL, scope: "next", horizon_h: 6 };
 const SWAPS: Record<string, string> = {
   none: "As planned", millet: "Millets instead of white rice", brown_rice: "Brown rice instead of white rice",
   roti: "Roti instead of rice", half_portion: "Half the portion",
@@ -30,7 +33,14 @@ export function WhatIf() {
   const [req, setReq] = useState<WhatIfReq>(BASE);
   const [res, setRes] = useState<WhatIfRes | null>(null);
   const [busy, setBusy] = useState(false);
+  const [levers, setLevers] = useState<Lever[] | null>(null);
   const timer = useRef<number>();
+  const day = req.horizon_h === 24;
+
+  useEffect(() => {
+    setLevers(null);
+    api.levers(id, req.horizon_h, req.scope).then(r => setLevers(r.levers)).catch(() => setLevers([]));
+  }, [id, req.horizon_h, req.scope, tick]);
 
   useEffect(() => {
     window.clearTimeout(timer.current);
@@ -41,6 +51,7 @@ export function WhatIf() {
   }, [id, req, tick]);
 
   const set = (patch: Partial<WhatIfReq>) => setReq(r => ({ ...r, ...patch }));
+  const apply = (patch: Partial<WhatIfReq>) => setReq(r => ({ ...r, ...NEUTRAL, ...patch }));
   if (res && !res.available) return <p className="empty">No recent CGM reading, so the twin cannot start a simulation.</p>;
 
   const spec = () => {
@@ -78,13 +89,18 @@ export function WhatIf() {
     <div className="whatif">
       <aside>
         <h2>Change one thing</h2>
-        <p className="small muted" style={{ margin: "4px 0 6px" }}>
-          The twin re-simulates the next 6 hours from now.
-          {res?.target_meal && <> Meal in question: about {fmt(res.target_meal.carbs)} g at {res.target_meal.time}.</>}
+        <div className="segmented" role="radiogroup" aria-label="Horizon">
+          <button role="radio" aria-checked={!day} className={!day ? "on" : ""} onClick={() => set({ horizon_h: 6, scope: "next" })}>Tonight, next meal</button>
+          <button role="radio" aria-checked={day} className={day ? "on" : ""} onClick={() => set({ horizon_h: 24, scope: "all" })}>Next 24 h, every meal</button>
+        </div>
+        <p className="small muted" style={{ margin: "6px 0 6px" }}>
+          {day ? "The twin re-simulates the next 24 hours with the change applied to every main meal (meal timing moves dinner only)."
+               : "The twin re-simulates the next 6 hours from now."}
+          {!day && res?.target_meal && <> Meal in question: about {fmt(res.target_meal.carbs)} g at {res.target_meal.time}.</>}
         </p>
         <div className="presets">
-          {PRESETS.map(pr => <button key={pr.label} className="btn" onClick={() => setReq({ ...BASE, ...pr.req })}>{pr.label}</button>)}
-          <button className="btn" onClick={() => setReq(BASE)}>Reset</button>
+          {PRESETS.map(pr => <button key={pr.label} className="btn" onClick={() => apply(pr.req)}>{pr.label}</button>)}
+          <button className="btn" onClick={() => apply({})}>Reset</button>
         </div>
         <div className="control">
           <label htmlFor="walk"><span>Walk after the meal</span><span>{req.walk_minutes ? `${req.walk_minutes} min` : "none"}</span></label>
@@ -115,7 +131,7 @@ export function WhatIf() {
       </aside>
       <section>
         <div className="chart-title">
-          <h2>Next 6 hours: as planned against the scenario</h2>
+          <h2>Next {day ? "24" : "6"} hours: as planned against the scenario</h2>
           <div className="legend">
             <span><i style={{ borderColor: p.grey }} />As planned</span>
             <span><i style={{ borderColor: p.accent }} />Scenario</span>
@@ -124,7 +140,12 @@ export function WhatIf() {
           </div>
         </div>
         <div style={{ opacity: busy ? 0.6 : 1, transition: "opacity 120ms" }}>
-          <PlotFigure spec={spec} ariaLabel="Baseline and counterfactual glucose" />
+          {res ? (
+            <TableView title="As planned against the scenario" columns={["Time", "As planned, mg/dL", "Scenario, mg/dL"]}
+              rows={res.times.map((t, i) => [hhmm(t), fmt(res.baseline[i]), fmt(res.scenario[i])]).filter((_, i) => i % (day ? 6 : 3) === 0)}>
+              <PlotFigure spec={spec} ariaLabel="Baseline and counterfactual glucose" />
+            </TableView>
+          ) : <SkeletonBlock height={330} label="Simulating" />}
         </div>
         {b && a && res && (
           <table className="compare num">
@@ -134,9 +155,31 @@ export function WhatIf() {
               <tr><td>Time above 180</td><td>{b.tar_min} min</td><td>{a.tar_min} min</td><td><Delta v={res.delta.tar_min} unit="min" /></td></tr>
               <tr><td>Time below 70</td><td>{b.tbr_min} min</td><td>{a.tbr_min} min</td><td><Delta v={a.tbr_min - b.tbr_min} unit="min" /></td></tr>
               <tr><td>Mean glucose</td><td>{fmt(b.mean)}</td><td>{fmt(a.mean)}</td><td><Delta v={res.delta.mean} unit="mg/dL" /></td></tr>
+              <tr><td>Time in range</td><td>{fmt(b.tir_pct)}%</td><td>{fmt(a.tir_pct)}%</td><td><Delta v={res.delta.tir_pct} unit="points" lowerIsBetter={false} /></td></tr>
+              <tr><td>Area above 180</td><td>{fmt(b.auc_above_180)}</td><td>{fmt(a.auc_above_180)}</td><td><Delta v={res.delta.auc_above_180} unit="mg/dL h" /></td></tr>
             </tbody>
           </table>
         )}
+        <h2 style={{ marginTop: 24 }}>Levers for this patient, ranked</h2>
+        <p className="small muted" style={{ margin: "4px 0 6px" }}>
+          The twin tries each change on its own. Ranked by {day ? "area above 180 over 24 hours" : "the change in peak"}. Select a row to show it above.
+        </p>
+        {levers ? (
+          <table className="compare num levers">
+            <thead><tr><th>Change</th><th>Peak</th><th>Time above 180</th>{day && <th>Area above 180</th>}</tr></thead>
+            <tbody>
+              {levers.map(l => (
+                <tr key={l.label} className="row" tabIndex={0} onClick={() => apply(l.request)}
+                  onKeyDown={e => e.key === "Enter" && apply(l.request)} aria-label={`Apply: ${l.label}`}>
+                  <td>{l.label}</td>
+                  <td><Delta v={l.peak} unit="mg/dL" /></td>
+                  <td><Delta v={l.tar_min} unit="min" /></td>
+                  {day && <td><Delta v={l.auc_above_180} unit="mg/dL h" /></td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : <SkeletonBlock height={260} label="Ranking levers" />}
         <p className="small muted" style={{ marginTop: 12, maxWidth: 720 }}>
           {res?.note} Solver: {res?.solver}. The twin has learned this patient's insulin sensitivity, absorption and
           response to walking from the calibration week; effects of foods use published absorption speeds. Treat results

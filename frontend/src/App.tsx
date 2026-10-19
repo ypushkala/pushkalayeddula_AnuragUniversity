@@ -1,10 +1,11 @@
 import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
-import { api, fullTime } from "./api";
+import { api, dayMonth, fullTime, hhmm } from "./api";
 import { LiveProvider, useLive } from "./live";
 import { Cardio } from "./pages/Cardio";
 import { ModelCard } from "./pages/ModelCard";
 import { Note } from "./pages/Note";
 import { Patient, TwinTab } from "./pages/Patient";
+import { Share } from "./pages/Share";
 import { Ward } from "./pages/Ward";
 import { WhatIf } from "./pages/WhatIf";
 
@@ -21,17 +22,26 @@ function ClockControl() {
   return (
     <div className="clock">
       <span title={connected ? "Replay stream connected" : "Stream disconnected"} className={`dot-live ${connected && !clock.paused ? "" : "off"}`} />
-      <span className="clock-time">{fullTime(clock.now)} IST</span>
+      <span className="clock-time"><span className="hide-sm">{fullTime(clock.now)}</span><span className="show-sm">{dayMonth(clock.now)} {hhmm(clock.now)}</span> IST</span>
       <span className="muted small">Replay {clock.paused ? "paused" : `${clock.speed}x`}</span>
       <button className="btn" onClick={() => set({ paused: !clock.paused })}>{clock.paused ? "Play" : "Pause"}</button>
-      <select aria-label="Replay speed" value={clock.speed} onChange={e => set({ speed: +e.target.value })}>
+      <select className="hide-sm" aria-label="Replay speed" value={clock.speed} onChange={e => set({ speed: +e.target.value })}>
         {[1, 10, 60, 300].map(s => <option key={s} value={s}>{s}x</option>)}
       </select>
-      <select aria-label="Jump to time" value="" onChange={e => e.target.value && set({ at: e.target.value })}>
+      <select className="hide-sm" aria-label="Jump to time" value="" onChange={e => e.target.value && set({ at: e.target.value })}>
         <option value="">Jump to</option>
         {JUMPS.map(([l, v]) => <option key={v} value={v}>{l}</option>)}
       </select>
     </div>
+  );
+}
+
+function Clinician() {
+  const { clinician, setClinician } = useLive();
+  return (
+    <label className="clinician small hide-sm">Signed in as{" "}
+      <input type="text" value={clinician} maxLength={40} onChange={e => setClinician(e.target.value)} aria-label="Clinician name" />
+    </label>
   );
 }
 
@@ -43,6 +53,7 @@ function ThemeToggle() {
 function Shell() {
   return (
     <>
+      <a className="skip-link" href="#main">Skip to content</a>
       <header className="masthead">
         <div className="brand">
           <span className="brand-name">Prativimb</span>
@@ -52,12 +63,13 @@ function Shell() {
           <NavLink to="/" end>Ward</NavLink>
           <NavLink to="/model">Model card</NavLink>
         </nav>
-        <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+        <div className="mast-tools">
           <ClockControl />
+          <Clinician />
           <ThemeToggle />
         </div>
       </header>
-      <main>
+      <main id="main" tabIndex={-1}>
         <Routes>
           <Route path="/" element={<Ward />} />
           <Route path="/model" element={<ModelCard />} />
@@ -81,7 +93,10 @@ export default function App() {
   return (
     <LiveProvider>
       <BrowserRouter>
-        <Shell />
+        <Routes>
+          <Route path="/share/:id" element={<Share />} />
+          <Route path="*" element={<Shell />} />
+        </Routes>
       </BrowserRouter>
     </LiveProvider>
   );

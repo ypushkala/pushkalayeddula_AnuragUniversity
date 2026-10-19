@@ -3,6 +3,7 @@ import type { Agp } from "../api";
 import { fmt } from "../api";
 import { useLive } from "../live";
 import { PlotFigure, baseStyle } from "./PlotFigure";
+import { TableView } from "./TableView";
 
 const hm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:00`;
 
@@ -36,7 +37,10 @@ export function AgpChart({ agp }: { agp: Agp }) {
           <span><i className="band" style={{ background: p.ink, opacity: 0.1 }} />5 to 95%</span>
         </div>
       </div>
-      <PlotFigure spec={spec} ariaLabel="Ambulatory glucose profile" />
+      <TableView title="Ambulatory glucose profile" columns={["Time of day", "5%", "25%", "Median", "75%", "95%"]}
+        rows={rows.filter(r => r.minute % 60 === 0).map(r => [hm(r.minute), fmt(r.p5), fmt(r.p25), fmt(r.p50), fmt(r.p75), fmt(r.p95)])}>
+        <PlotFigure spec={spec} ariaLabel="Ambulatory glucose profile" />
+      </TableView>
       <table className="kv num" style={{ marginTop: 6 }}>
         <tbody>
           <tr>

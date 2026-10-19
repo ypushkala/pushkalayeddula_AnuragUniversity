@@ -2,13 +2,15 @@ export type Tier = "alert" | "watch" | "high" | null;
 
 export interface Clock { minute: number; now: string; speed: number; paused: boolean; start: string; end: string }
 
+export interface Ack { id: string; pid: string; kind: string; by: string; minute: number; until: number; note: string; t?: string; until_t?: string }
 export interface EventA {
   glucose: number; trend30: number | null; peak: number; peak_minute: number; tier: Tier;
-  low: "now" | "forecast" | null; cross_minute?: number; low_minute?: number; low_value?: number;
+  low: "now" | "forecast" | null; cross_minute?: number; low_minute?: number; low_value?: number; low_p?: number;
+  ack?: Ack | null; low_ack?: Ack | null; artefact?: boolean;
 }
 export interface EventB {
   risk: number | null; flag: boolean; post_event: boolean; day: number; flag_since?: number | null;
-  event_minute?: number; event?: string;
+  event_minute?: number; event?: string; ack?: Ack | null;
 }
 export interface WardRow {
   id: string; name: string; age: number; sex: string; problems: string[]; hba1c: number;
@@ -45,7 +47,12 @@ export interface Timeline {
   sleep: { start: string; end: string; stage: string }[];
 }
 export interface Driver { category: string; mgdl: number; twin: number; learned: number; text: string }
-export interface AlertCard { kind: string; tier: string; title: string; detail: string; reason: string }
+export interface AlertCard { kind: string; tier: string; title: string; detail: string; reason: string; ack?: Ack | null }
+export interface MealEntryRec { id: string; pid: string; minute: number; carbs: number; kind: string; label: string; by: string;
+  entered_minute: number; type: "planned" | "logged"; t: string }
+export interface AuditRow { action: string; wall_time: string; pid: string; by?: string; kind?: string; minute?: number;
+  label?: string; carbs?: number; note?: string; until?: number; removed_by?: string }
+export interface Lever { label: string; request: Partial<WhatIfReq>; peak: number; tar_min: number; auc_above_180: number; mean: number; combined: boolean }
 export interface Forecast {
   available: boolean; reason?: string; origin: string;
   points: { t: string; mid: number; lo: number; hi: number; lo_alert: number; twin: number }[];
@@ -53,18 +60,20 @@ export interface Forecast {
   status: EventA; alert_level: number; interval: number;
   explanation?: { drivers: Driver[]; sentence: string; unit: string; twin_peak: number; twin_baseline_peak: number };
   alerts: AlertCard[];
+  entries?: MealEntryRec[];
 }
 export interface LogEntry { t: string; glucose: number; tier: Tier; low: string | null; peak: number; peak_time: string;
   low_value: number | null; cross_time: string | null }
 
 export interface WhatIfReq { walk_minutes: number; swap: string; shift_hours: number; missed_dose: boolean;
-  sleep_hours: number | null; night_shift: boolean }
-export interface WhatIfSummary { peak: number; peak_time: string; tar_min: number; tbr_min: number; mean: number }
+  sleep_hours: number | null; night_shift: boolean; scope: "next" | "all"; horizon_h: 6 | 24 }
+export interface WhatIfSummary { peak: number; peak_time: string; tar_min: number; tbr_min: number; mean: number; tir_pct: number; auc_above_180: number }
 export interface WhatIf {
   available: boolean; origin: string; times: string[]; baseline: number[]; scenario: number[];
   baseline_summary: WhatIfSummary; scenario_summary: WhatIfSummary;
-  delta: { peak: number; tar_min: number; mean: number };
+  delta: { peak: number; tar_min: number; mean: number; auc_above_180: number; tir_pct: number };
   target_meal: { time: string; carbs: number; new_time: string } | null; note: string; solver: string;
+  horizon_h: number; scope: string; meals_changed: number;
 }
 
 export interface CardioView {
@@ -102,6 +111,16 @@ export const api = {
     j<WhatIf>(`/api/patients/${id}/whatif`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(req) }),
   cardio: (id: string, endDay?: number) => j<CardioView>(`/api/patients/${id}/cardio${endDay !== undefined ? `?end_day=${endDay}` : ""}`),
   note: (id: string) => j<Note>(`/api/patients/${id}/note`),
+  levers: (id: string, horizon = 6, scope = "next") => j<{ available: boolean; levers: Lever[]; target_meal: WhatIf["target_meal"] }>(
+    `/api/patients/${id}/levers?horizon_h=${horizon}&scope=${scope}`),
+  mealTypes: () => j<{ kind: string; label: string; speed: number }[]>("/api/meal-types"),
+  addMeal: (id: string, body: { minutes_from_now: number; carbs: number; kind: string; label: string; by: string }) =>
+    j<MealEntryRec>(`/api/patients/${id}/meals`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+  removeMeal: (id: string, mealId: string, by: string) =>
+    j<{ removed: string }>(`/api/patients/${id}/meals/${mealId}?by=${encodeURIComponent(by)}`, { method: "DELETE" }),
+  ack: (id: string, body: { kind: string; by: string; snooze_minutes: number; note?: string }) =>
+    j<Ack>(`/api/patients/${id}/ack`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+  audit: (id?: string) => j<AuditRow[]>(`/api/audit${id ? `?pid=${id}` : ""}`),
   modelCard: () => j<{ metrics: any; alert_level: number; cardio_threshold: number; figures: string[] }>("/api/model-card"),
 };
 
