@@ -1,4 +1,4 @@
-"""Single entry point: python -m prativimb.pipeline [data|twin|glucose|cardio|report|train|all]"""
+"""Single entry point: python -m prativimb.pipeline [data|twin|glucose|cardio|report|followup|train|all]"""
 from __future__ import annotations
 
 import sys
@@ -10,8 +10,9 @@ def main(argv: list[str]) -> None:
     t0 = time.time()
     steps = {
         "data": ["data"], "twin": ["twin"], "glucose": ["glucose"], "hypo": ["hypo"], "cardio": ["cardio"],
-        "report": ["report"], "train": ["twin", "glucose", "hypo", "cardio", "report"],
-        "all": ["data", "twin", "glucose", "hypo", "cardio", "report"],
+        "report": ["report", "followup"], "followup": ["followup"],
+        "train": ["twin", "glucose", "hypo", "cardio", "report", "followup"],
+        "all": ["data", "twin", "glucose", "hypo", "cardio", "report", "followup"],
     }[stage]
     for s in steps:
         print(f"== {s}")
@@ -33,6 +34,9 @@ def main(argv: list[str]) -> None:
         elif s == "report":
             from prativimb.eval import report
             report.run()
+        elif s == "followup":
+            from prativimb.eval import followup
+            followup.run(verbose=False)
     print(f"finished '{stage}' in {time.time() - t0:.0f}s")
 
 

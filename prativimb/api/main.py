@@ -6,9 +6,10 @@ import json
 import warnings
 from contextlib import asynccontextmanager
 from datetime import datetime
+from urllib.parse import unquote
 
 import numpy as np
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -16,7 +17,8 @@ from fastapi.staticfiles import StaticFiles
 from prativimb import config
 from prativimb.api import note_pdf
 from prativimb.api.clock import DemoClock
-from prativimb.api.schemas import Acknowledge, ClockUpdate, MealEntry, PatientDetail, WhatIfRequest
+from prativimb.api.schemas import (Acknowledge, Action, ClockUpdate, Consent, MealEntry, PatientDetail, Plan,
+                                   WhatIfRequest)
 from prativimb.data.cohort import MEAL_TYPES
 from prativimb.api.services import AppState, clean, iso
 
@@ -72,7 +74,7 @@ async def lifespan(app: FastAPI):
     task.cancel()
 
 
-app = FastAPI(title="Prativimb API", version="1.2.0", lifespan=lifespan,
+app = FastAPI(title="Prativimb API", version="1.4.0", lifespan=lifespan,
               description="Hybrid patient digital twin (synthetic data). Decision support only, not a diagnosis.")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -87,6 +89,23 @@ def check(pid: str) -> str:
     if pid not in state().patients.index:
         raise HTTPException(404, f"Unknown patient {pid}")
     return pid
+
+
+# Roles. The demo has no passwords: the dashboard sends the role and name chosen on its sign in
+# page in two headers. A deployment would take both from the clinic's single sign on instead.
+ROLE_NAMES = {"doctor": "doctor", "nurse": "nurse or health educator", "patient": "patient"}
+
+
+def actor(request: Request) -> tuple[str, str]:
+    role = request.headers.get("x-prativimb-role", "")
+    if role not in ROLE_NAMES:
+        raise HTTPException(401, "Sign in first and choose a role.")
+    return role, unquote(request.headers.get("x-prativimb-user", "")).strip()[:60] or ROLE_NAMES[role].capitalize()
+
+
+def need(who: tuple[str, str], allowed: tuple[str, ...], what: str) -> None:
+    if who[0] not in allowed:
+        raise HTTPException(403, f"Signed in as a {ROLE_NAMES[who[0]]}, you cannot {what}.")
 
 
 @app.get("/api/health")
@@ -118,7 +137,7 @@ def ward():
 
 @app.get("/api/patients/{pid}", response_model=PatientDetail)
 def patient(pid: str):
-    return state().detail(check(pid))
+    return state().detail(check(pid), CLOCK.minute())
 
 
 @app.get("/api/patients/{pid}/timeline")
@@ -147,7 +166,7 @@ def whatif(pid: str, req: WhatIfRequest):
 
 
 @app.get("/api/patients/{pid}/levers")
-def levers(pid: str, horizon_h: int = Query(6, ge=6, le=24), scope: str = Query("next", pattern="^(next|all)$")):
+def levers(pid: str, horizon_h: int = Query(6, ge=6, le=168), scope: str = Query("next", pattern="^(next|all)$")):
     return state().rank_levers(check(pid), CLOCK.minute(), horizon_h, scope)
 
 
@@ -157,24 +176,95 @@ def meal_types():
 
 
 @app.post("/api/patients/{pid}/meals")
-def add_meal(pid: str, e: MealEntry):
+def add_meal(pid: str, e: MealEntry, who=Depends(actor)):
     if e.kind not in MEAL_TYPES:
         raise HTTPException(422, f"Unknown meal kind {e.kind}")
     now = int(CLOCK.minute())
     minute = (now + e.minutes_from_now) // 5 * 5
-    return state().store.add_meal(check(pid), minute, e.carbs, e.kind, e.label, e.by, now)
+    return state().store.add_meal(check(pid), minute, e.carbs, e.kind, e.label, who[1], now,
+                                  source="patient" if who[0] == "patient" else "clinician")
 
 
 @app.delete("/api/patients/{pid}/meals/{meal_id}")
-def remove_meal(pid: str, meal_id: str, by: str = Query("Clinician", max_length=60)):
-    if not state().store.remove_meal(check(pid), meal_id, by, int(CLOCK.minute())):
+def remove_meal(pid: str, meal_id: str, who=Depends(actor)):
+    if not state().store.remove_meal(check(pid), meal_id, who[1], int(CLOCK.minute())):
         raise HTTPException(404, "No such meal entry")
     return {"removed": meal_id}
 
 
 @app.post("/api/patients/{pid}/ack")
-def acknowledge(pid: str, a: Acknowledge):
-    return state().store.acknowledge(check(pid), a.kind, a.by, int(CLOCK.minute()), a.snooze_minutes, a.note)
+def acknowledge(pid: str, a: Acknowledge, who=Depends(actor)):
+    need(who, ("doctor", "nurse"), "mark alerts as seen")
+    if a.kind == "cardio":
+        need(who, ("doctor",), "mark a heart risk alert as seen; a doctor reviews those")
+    return state().store.acknowledge(check(pid), a.kind, who[1], int(CLOCK.minute()), a.snooze_minutes, a.note, who[0])
+
+
+@app.delete("/api/patients/{pid}/ack/{ack_id}")
+def undo_acknowledge(pid: str, ack_id: str, who=Depends(actor)):
+    need(who, ("doctor", "nurse"), "undo an acknowledgement")
+    if not state().store.remove_ack(check(pid), ack_id, who[1], int(CLOCK.minute())):
+        raise HTTPException(404, "No such acknowledgement")
+    return {"removed": ack_id}
+
+
+@app.post("/api/patients/{pid}/actions")
+def add_action(pid: str, a: Action, who=Depends(actor)):
+    need(who, ("doctor", "nurse"), "record clinical actions")
+    return state().store.add_action(check(pid), a.kind, who[1], int(CLOCK.minute()), a.note, a.outcome, who[0], a.alert)
+
+
+@app.delete("/api/patients/{pid}/actions/{action_id}")
+def undo_action(pid: str, action_id: str, who=Depends(actor)):
+    need(who, ("doctor", "nurse"), "undo clinical actions")
+    if not state().store.remove_action(check(pid), action_id, who[1], int(CLOCK.minute())):
+        raise HTTPException(404, "No such action")
+    return {"removed": action_id}
+
+
+@app.get("/api/patients/{pid}/history")
+def history(pid: str, days: int = Query(7, ge=1, le=21)):
+    return state().history(check(pid), CLOCK.minute(), days)
+
+
+@app.get("/api/patients/{pid}/plans")
+def plans(pid: str):
+    return state().plans(check(pid), CLOCK.minute())
+
+
+@app.post("/api/patients/{pid}/plans")
+def add_plan(pid: str, p: Plan, who=Depends(actor)):
+    need(who, ("doctor",), "agree a plan; a doctor does that with the patient")
+    return state().store.add_plan(check(pid), p.label, p.request, who[1], int(CLOCK.minute()), p.predicted)
+
+
+@app.delete("/api/patients/{pid}/plans/{plan_id}")
+def remove_plan(pid: str, plan_id: str, who=Depends(actor)):
+    need(who, ("doctor",), "remove a plan")
+    if not state().store.remove_plan(check(pid), plan_id, who[1], int(CLOCK.minute())):
+        raise HTTPException(404, "No such plan")
+    return {"removed": plan_id}
+
+
+@app.get("/api/patients/{pid}/consent")
+def consent(pid: str):
+    return state().consent_view(check(pid), CLOCK.minute())
+
+
+@app.post("/api/patients/{pid}/consent")
+def set_consent(pid: str, c: Consent, who=Depends(actor)):
+    need(who, ("patient", "doctor"), "change the patient's consent")
+    return state().store.set_consent(check(pid), c.source, c.granted, who[1], int(CLOCK.minute()), who[0])
+
+
+@app.get("/api/handover")
+def handover(hours: int = Query(12, ge=1, le=24)):
+    return state().handover(CLOCK.minute(), hours)
+
+
+@app.get("/api/digest")
+def digest():
+    return state().digest(CLOCK.minute())
 
 
 @app.get("/api/audit")
@@ -208,7 +298,9 @@ def fhir_bundle(pid: str):
 @app.get("/api/model-card")
 def model_card():
     m = state().metrics
+    fu = config.REPORT_DIR / "followup.json"
     return {"metrics": m, "alert_level": state().alert_cov, "cardio_threshold": state().cardio_threshold,
+            "followup": json.loads(fu.read_text()) if fu.exists() else None,
             "figures": sorted(p.name for p in config.FIGURE_DIR.glob("*.png"))}
 
 

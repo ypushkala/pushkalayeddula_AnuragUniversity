@@ -4,7 +4,7 @@ Unlisted YouTube upload. Screen at 1920 x 1080, browser zoom 100%, light theme u
 
 ## Before recording
 
-1. `make all` (or use the committed artefacts), then in two terminals `make api` and `make web`. Open http://localhost:5173.
+1. `make all` (or use the committed artefacts), then in two terminals `make api` and `make web`. Open http://localhost:5173 and sign in as **Doctor**, name "Dr Rao". Keep a second private window ready to sign in as **Nurse or health educator** for the roles moment.
 2. In the **Demo replay** strip at the bottom of the screen, set speed to **10x** and press **Pause**. Every time change below uses a jump button in that strip.
 3. Have `docs/presentation.pdf`, `docs/architecture.png` and `reports/metrics.md` open in other tabs.
 4. Close notifications. Record the terminal for the `make data` moment in section 5.
@@ -19,11 +19,11 @@ Unlisted YouTube upload. Screen at 1920 x 1080, browser zoom 100%, light theme u
 | 04:00 to 05:30 | Architecture | Slide 5 |
 | 05:30 to 07:00 | Data | Slide 6, terminal, `data/raw` |
 | 07:00 to 08:15 | Ward view | Dashboard `/` |
-| 08:15 to 10:30 | Ramesh: patient twin, acknowledge, plan a meal | `/patient/PTV-0001` |
-| 10:30 to 12:30 | Try a change case study, ranked changes, patient view | `/patient/PTV-0001/try`, `/share/PTV-0001` |
+| 08:15 to 10:30 | Ramesh: patient twin, track record, acknowledge with undo, plan a meal | `/patient/PTV-0001`, Record tab |
+| 10:30 to 12:30 | Try a change, a week plan and its one week check, patient view | `/patient/PTV-0001/try`, `/share/PTV-0001` |
 | 12:30 to 13:45 | Fatima: hypoglycaemia to rebound around iftar | `/patient/PTV-0002` at 18:00 |
 | 13:45 to 14:45 | Suresh: heart risk week | `/patient/PTV-0003?heart=26` |
-| 14:45 to 15:30 | Clinical note | `/note/PTV-0001` |
+| 14:45 to 15:30 | Clinical note and shift handover | `/note/PTV-0001`, `/handover` |
 | 15:30 to 17:00 | Metrics and model card | `/model`, slides 8 to 10 |
 | 17:00 to 18:15 | Real CGM traces | Slide 11, `reports/real_data.md` |
 | 18:15 to 19:15 | Privacy, safety, limitations | Slide 14 |
@@ -69,9 +69,9 @@ Run `make data` on camera (about 20 seconds). Show `data/raw/ehr/PTV-0001.json` 
 
 Demo replay strip, **19:45**. Ward page.
 
-"This is the ward at 19:45 on Sunday 15 March. It opens on the patients who need attention, not all two hundred. Red means a confident alert: glucose above 180 likely within two hours, with the time and the peak. The heart column shows a raised risk of a cardiac event in three days. Glucose now comes with its trend in words, and the small line is the last 24 hours."
+"This is the ward at 19:45 on Sunday 15 March. It opens on the patients who need attention, not all two hundred, grouped by urgency: lows first, then likely highs, then raised heart risk. Under each alert, in grey, a few words on why: dinner, short sleep, night shift. Twenty three need attention now; the line at the top says a ward like this typically has about thirty at this hour, so tonight is ordinary. That number matters: we measured alert load, and we will come back to it."
 
-"The line above the table says what changed since I last looked: new alerts and resolved ones, by name. Clinicians scan for change, not state." Press `j` twice and `k` once to show keyboard navigation, click **All patients** and back to **Needs attention**, then open Ramesh Patil. Point out the search box in the top bar: `/` finds any of the two hundred patients.
+"The line above the table says what changed since I last looked: new alerts and resolved ones, by name. Clinicians scan for change, not state." Press `j` twice and `k` once to show keyboard navigation, then open Ramesh Patil from the High glucose likely group. Point out the search box in the top bar (`/` finds any patient) and say: "`n` anywhere jumps to the next alert nobody has seen."
 
 ## 08:15 Ramesh: Today
 
@@ -79,11 +79,11 @@ Demo replay strip, **19:45**. Ward page.
 
 The black line is his CGM; the teal line is the forecast with its likely range. The twin expects his usual dinner at 20:15 and a peak around 278 at 21:45. Below, on the same time axis: meals, his missed morning metformin, his daytime sleep after the night shift, steps and heart rate.
 
-Scroll to **Why the glucose forecast says this**, open by default: the reason in one sentence, expected dinner, reduced insulin sensitivity, short sleep with the night shift, and bars showing how many mg/dL each factor adds to the peak, from exact Shapley values on the twin and SHAP on the learned correction. Below it, one line: heart risk normal this week, which opens into the seven day view."
+Scroll to **Why the glucose forecast says this**, open by default: the reason in one sentence, expected dinner, reduced insulin sensitivity, short sleep with the night shift, and bars showing how many mg/dL each factor adds to the peak, from exact Shapley values on the twin and SHAP on the learned correction. Under it, its track record for Ramesh: 21 alerts in the last week, 19 came true, median warning 45 minutes. Below that, one line: heart risk normal this week, which opens into the seven day view."
 
-Click the **Record** tab. "Problems with ICD-10 codes, medicines, labs with dates, genetic markers, and what the glucose forecast has learned, for example his insulin sensitivity is about 30% of a typical adult without diabetes." Open **History**: "the forecast has held this alert since 19:15, about two hours before the crossing." The **Two week glucose pattern** is open at the top: "Two weeks at a glance: time in range, GMI and variability, in the international consensus format." Click **Show as table** under a chart: "every chart has a table twin, for screen readers and for anyone who wants the numbers."
+Click the **Record** tab. "Problems with ICD-10 codes, medicines, labs with dates, genetic markers, and what the glucose forecast has learned, for example his insulin sensitivity is about 30% of a typical adult without diabetes." **Earlier alerts and what happened** is open at the top: "Every alert this week, what the forecast said, whether it came true, how much warning it gave, and what the team did. Four highs came with no alert, and we show that too." The **Two week glucose pattern** is open at the top: "Two weeks at a glance: time in range, GMI and variability, in the international consensus format." Click **Show as table** under a chart: "every chart has a table twin, for screen readers and for anyone who wants the numbers."
 
-In the banner, click **Mark as seen**, choose 1 hour, note "Discussed walk after dinner", confirm. "The alert stays visible but drops down the ward list for an hour, and the activity log records who did what." Then click **Log a meal** in the banner: In 1 h, Millet (ragi or jowar) meal, 60 g, **Add meal**. "Ramesh says he will have ragi rotis tonight. The forecast peak drops from about 278 to about 185 straight away, because the twin now knows the meal instead of assuming his usual rice." Remove the entry again.
+In the banner, click **Mark as seen**, choose 1 hour, note "Discussed walk after dinner", confirm. "The alert stays visible but moves below the unseen ones for an hour, and the audit log records who did what. Every change offers Undo for ten seconds." Point at the Undo message, do not click it. Then click **Log a meal** in the banner: In 1 h, Millet (ragi or jowar) meal, 60 g, **Add meal**. "Ramesh says he will have ragi rotis tonight. The forecast peak drops from about 278 to about 185 straight away, because the twin now knows the meal instead of assuming his usual rice." Remove the entry again.
 
 ## 10:30 Try a change: case study
 
@@ -101,7 +101,9 @@ Click **Try a change** in the banner.
 
 "These curves come from the mechanistic twin, solved with scipy's adaptive solver. They are a conversation aid, not a prescription."
 
-Click **Share with Ramesh** in the banner, choose हिन्दी: "And this is what Ramesh takes home: large type, in Hindi or Tamil, the two or three changes that help him most, shareable on WhatsApp or printed. The translations are drafts for review by a native speaking clinician."
+Click **Next 7 days** (a few seconds). "Over a week, a 30 minute walk after every main meal adds about 21 points of time in range. A week ahead the level drifts, so the chart shows only the change against his usual plan." Scroll up to **Plans agreed with Ramesh**: "On 6 March his doctor agreed a 15 minute walk after every main meal. The one week check compares before and after with what the forecast expected, and it checks from his steps whether he actually walked: after 3 of 20 meals. So the plan was not tested, and the dashboard says ask what got in the way, instead of claiming it failed or worked."
+
+Click **Share with Ramesh** in the banner, choose हिन्दी: "And this is what Ramesh takes home: large type, in Hindi or Tamil, the changes that help him most, shareable on WhatsApp or printed. From the same page he can log a meal himself, and choose what he shares: glucose, wearable data and health records through ABDM, each with a button to stop sharing. The translations are drafts for review by a native speaking clinician."
 
 ## 12:30 Fatima: hypoglycaemia to rebound
 
@@ -117,19 +119,21 @@ Demo replay strip, **19:45**.
 
 Find Suresh Menon from the top bar. On **Today**, open the heart risk line near the bottom and click **Earlier** until the week ends 12 Mar (or use `/patient/PTV-0003?heart=26`).
 
-"Suresh, 61, hypertensive, father had a heart attack at 58. The heatmap compares each night with his own baseline; darker means a worse deviation. Over the week his resting heart rate climbs from 61 to 72 and his HRV falls from 38 to 23 milliseconds, with less deep and REM sleep. The risk trajectory crosses the flag threshold on 9 March, four days before the simulated event on 13 March, marked in red. The factors are worded against his own baseline."
+"Suresh, 61, hypertensive, father had a heart attack at 58. The heatmap compares each night with his own baseline; darker means a worse deviation. Over the week his resting heart rate climbs from 61 to 72 and his HRV falls from 38 to 23 milliseconds, with less deep and REM sleep. The risk trajectory crosses the flag threshold on 9 March, four days before the simulated event on 13 March, marked in red. For a heart alert the banner leads with Call the patient and Book a review, not a glucose change."
+
+Optional, in the nurse window: open Manoj Naidu, click **Mark as seen**. "A nurse can mark glucose alerts as seen but not heart risk; that goes to a doctor, and the service enforces it."
 
 ## 14:45 Clinical note
 
 Open Ramesh, click **Clinical note** next to his name; it opens as a printable sheet.
 
-"One click turns the twin's findings into a SOAP note for the record: what the patient reported, CGM and wearable summaries, the alerts with their reasons, and the simulated options." Click **Download PDF** and show the one page PDF.
+"One click turns the twin's findings into a SOAP note for the record: what the patient reported, CGM and wearable summaries, the alerts with their reasons, and the simulated options." Click **Download PDF** and show the one page PDF. Then click **Handover** in the top bar: "At the end of a shift: what is still open, what was seen, and what was done and by whom, ready to print or paste."
 
 ## 15:30 Metrics and model card
 
 Open **About the model**, then slides 8 to 10.
 
-"All metrics are on 40 test patients the models never saw, on days after the twin's calibration week. At 120 minutes the hybrid's error is 25.2 mg/dL, against 29.0 for physics alone and 27.6 for machine learning alone: the hybrid beats both parts at every horizon. Clarke zone A is 85% at one hour. The 90% intervals cover 88.7 to 89.8% of readings. The confident alert tier catches 67% of spikes at 85% precision with 0.2 false alarms per patient day; the watch tier catches 90% about 75 minutes ahead. For cardiovascular risk the ensemble reaches an AUROC of 0.95, but with only six test events the interval is wide, and we say so."
+"All metrics are on 40 test patients the models never saw, on days after the twin's calibration week. At 120 minutes the hybrid's error is 25.2 mg/dL, against 29.0 for physics alone and 27.6 for machine learning alone: the hybrid beats both parts at every horizon. Clarke zone A is 85% at one hour. The 90% intervals cover 88.7 to 89.8% of readings. The confident alert tier catches 67% of spikes at 85% precision with 0.2 false alarms per patient day; the watch tier catches 90% about 75 minutes ahead. Alert load: about 1.3 confident high alerts per patient per day, 94% of which came true, and lows are the noisiest alert. For cardiovascular risk the ensemble reaches an AUROC of 0.95, and here we have to be straight: the events and their warning signs come from our own simulator, so that number mostly shows the model learned our simulator. When we weaken the simulated warning signs to half strength it still flags 4 of 6 events; at a quarter, 1 of 6. It is a demonstration of the pipeline, not evidence about real hearts."
 
 ## 17:00 Real CGM traces
 
@@ -141,10 +145,10 @@ Slide 11, then `reports/real_data.md`.
 
 Slide 14.
 
-"All data is synthetic, so no personal data under the DPDP Act or HIPAA was used. We still built for it: a consent artefact per record, no identifiers in features, on premises inference, ABDM consent flows in the roadmap. Limitations: synthetic ground truth is still a model; six cardiac events is few; conformal coverage is approximate with correlated readings and lower below 70; unlogged meals cause most misses. This is decision support only, not a diagnosis."
+"All data is synthetic, so no personal data under the DPDP Act or HIPAA was used. We still built for it: consent the patient can withdraw on screen, which stops the service using that source; roles the service checks; an audit log of every action and undo; no identifiers in features; on premises inference; and device adapters for Apple Health, Google Fit and Health Connect. Limitations: synthetic ground truth is still a model; six cardiac events is few; conformal coverage is approximate with correlated readings and lower below 70; unlogged meals cause most misses. This is decision support only, not a diagnosis."
 
 ## 19:15 Roadmap and close
 
 Slide 15, then back to slide 1 for the team.
 
-"Next: validation on de-identified real data, federated learning of the residual model across hospitals so data never leaves them, ABDM and real device APIs, and a prospective clinic pilot. Prativimb: a reflection of the patient you can question. Thank you."
+"Next: validation on de-identified real data, including real cardiac outcomes, federated learning of the residual model across hospitals so data never leaves them, a real ABDM consent manager behind the screens we built, refitting each twin as weeks of data arrive, and a prospective clinic pilot with alert burden and time in range as outcomes. Prativimb: a reflection of the patient you can question. Thank you."

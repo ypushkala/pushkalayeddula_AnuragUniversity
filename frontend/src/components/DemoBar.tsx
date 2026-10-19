@@ -1,7 +1,8 @@
-import { api, fullTime } from "../api";
+import { api, fullTime, zoneName } from "../api";
 import { useLive } from "../live";
 
 const JUMPS: [string, string][] = [
+  ["17 Feb, new patients", "2026-02-17T19:45:00+05:30"],
   ["17:30", "2026-03-15T17:30:00+05:30"],
   ["18:00", "2026-03-15T18:00:00+05:30"],
   ["19:45", "2026-03-15T19:45:00+05:30"],
@@ -15,7 +16,7 @@ export function DemoBar() {
   return (
     <aside className="demobar" aria-label="Demo replay controls">
       <span className="demo-tag">Demo replay</span>
-      <span className="demo-time"><span className={`dot-live ${connected && !clock.paused ? "" : "off"}`} />{fullTime(clock.now)}</span>
+      <span className="demo-time"><span className={`dot-live ${connected && !clock.paused ? "" : "off"}`} />{fullTime(clock.now)} {zoneName()}</span>
       <button className="btn" onClick={() => set({ paused: !clock.paused })}>{clock.paused ? "Play" : "Pause"}</button>
       <span className="demo-group hide-sm" role="group" aria-label="Speed">
         <span className="muted">Speed</span>
@@ -23,7 +24,7 @@ export function DemoBar() {
           <button key={s} className={`chip ${clock.speed === s ? "on" : ""}`} aria-pressed={clock.speed === s} onClick={() => set({ speed: s })}>{s}x</button>
         ))}
       </span>
-      <span className="demo-group" role="group" aria-label="Jump to a time on 15 March">
+      <span className="demo-group" role="group" aria-label="Jump to a time">
         <span className="muted hide-sm">Jump to</span>
         {JUMPS.map(([l, v]) => <button key={v} className="chip" onClick={() => set({ at: v })}>{l}</button>)}
       </span>

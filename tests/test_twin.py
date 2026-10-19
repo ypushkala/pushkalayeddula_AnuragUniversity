@@ -105,3 +105,13 @@ def test_calibrated_twin_beats_cold_start_on_held_out_days():
         m = ~np.isnan(y)
         err = lambda th: np.sqrt(np.mean((forecast.forecast(pp, th, ks, 13)[m, 12] - y[m]) ** 2))
         assert err(theta) < err(calibrate.ehr_prior(s.ehr).mean)
+
+
+def test_insulin_appearance_delivers_the_whole_dose():
+    from prativimb.twin import forecast
+    H = 288 * 2
+    bolus = forecast.insulin_appearance(H, 70.0, [0], 6.0, 0.0)
+    total = bolus.sum() * 5 * forecast.INSULIN_VD_ML_PER_KG * 70.0 / 1e6
+    assert abs(total - 6.0) < 0.05
+    basal = forecast.insulin_appearance(288, 70.0, [], 0.0, 12.0)
+    assert np.allclose(basal, basal[0]) and abs(basal.sum() * 5 * forecast.INSULIN_VD_ML_PER_KG * 70.0 / 1e6 - 12.0) < 0.05

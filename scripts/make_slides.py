@@ -198,12 +198,18 @@ def spec(m: dict, cs: dict) -> list[Slide]:
 
     cr = c["components"]["risk"]
     op = c["operating_point"]
+    fu = json.loads((config.REPORT_DIR / "followup.json").read_text())
+    half = next(x for x in fu["cardio_stress"]["results"] if x["strength"] == 0.5)
+    quarter = next(x for x in fu["cardio_stress"]["results"] if x["strength"] == 0.25)
+    load = fu["alert_load"]
     S.append(Slide("Results: cardiovascular risk flag", "Event B", [
         Img(str(FIG / "cardio_performance.png"), 0.6, 1.5, 12.1, 4.05),
         Text(0.9, 5.75, 11.6, f"Ensemble AUROC {cr['auroc']:.2f} (95% CI {cr['auroc_ci'][0]:.2f} to {cr['auroc_ci'][1]:.2f}), AUPRC {cr['auprc']:.2f} at "
              f"{c['prevalence'] * 100:.1f}% prevalence, sensitivity {cr['sens_at_90spec'] * 100:.0f}% at 90% specificity. "
              f"At the 95% specificity operating point {op['events_caught']} of {op['events']} test events were flagged up to 3 days ahead. "
-             f"Only {c['n_events']} test events, so intervals are wide.", 13, INK2),
+             f"Only {c['n_events']} test events, so intervals are wide. The events come from our own simulator: with its warning signs "
+             f"weakened to half strength the flag catches {half['events_flagged']} of {half['events']}, at a quarter {quarter['events_flagged']} of {quarter['events']}. "
+             "A demonstration of the pipeline, not a clinical claim.", 12.5, INK2),
     ]))
 
     rd = m.get("real_data")
@@ -229,20 +235,23 @@ def spec(m: dict, cs: dict) -> list[Slide]:
 
     S.append(Slide("Clinical workflow", "Use", [
         Img(str(SHOTS / "01_ward.png"), 0.6, 1.45, 6.0, 3.84, border=True),
-        Img(str(SHOTS / "06_note_ramesh.png"), 6.85, 1.45, 5.9, 4.04, border=True),
-        Text(0.6, 5.55, 6.0, "1. Ward sorted by alerts, with what changed since the last look; acknowledge and snooze, with an audit trail. "
-             "2. Open the twin: forecast band, reasons, alert log, AGP; tell it about tonight's meal.", 12, INK2),
-        Text(6.85, 5.7, 5.9, "3. Rank the levers for this patient and share them in English, Hindi or Tamil. 4. One click SOAP note for the record.", 12, INK2),
+        Img(str(SHOTS / "15_earlier_alerts.png"), 6.85, 1.45, 5.9, 4.04, border=True),
+        Text(0.6, 5.55, 6.0, "1. Ward grouped by urgency, with why each alert fired; n opens the next unseen alert. "
+             f"Load measured: {load['high_per_patient_day']:.1f} confident high alerts per patient per day, {load['high_came_true'] * 100:.0f}% came true. "
+             "2. The first action fits the alert: check now, call, book a review, try a change. Undo for 10 seconds.", 11.5, INK2),
+        Text(6.85, 5.7, 5.9, "3. Every alert's outcome and what the team did; a week plan checked against what happened. "
+             "4. Shift handover, daily digest, SOAP note, patient view in English, Hindi or Tamil.", 11.5, INK2),
     ]))
 
     S.append(Slide("Privacy, safety and limits", "Governance", [
         Text(0.9, 1.75, 5.6, "Synthetic data only: no personal data under the DPDP Act 2023 or HIPAA was used.\n"
-             "Each record carries a consent artefact: purpose limited, time bound, revocable.\n"
-             "Deployment design: on premises inference, no identifiers in model features, audit log, ABDM consent flow.\n"
+             "Consent on screen: the patient can withdraw glucose, wearable or ABDM record sharing, and the service stops using that source.\n"
+             "Roles checked by the service: doctor, nurse or health educator, patient. Every action and undo is audited.\n"
+             "Deployment design: on premises inference, no identifiers in model features, clinic single sign on.\n"
              "Decision support only, not a diagnosis. The clinician decides.", 13.5, INK, bullets=True),
         Rule(7.0, 1.8, 5.5), Text(7.0, 1.95, 5.5, "Limitations we state openly", 14, INK, serif=True),
         Text(7.0, 2.5, 5.5, "Synthetic ground truth is still a model; real data will be harder.\n"
-             f"Only {c['n_events']} cardiovascular events in test patients.\n"
+             f"Only {c['n_events']} cardiovascular events in test patients, from our own simulator; no real outcome validation yet.\n"
              "Conformal coverage is approximate with serially correlated readings, and lower below 70 mg/dL.\n"
              "Unlogged meals remain the main source of missed spikes.", 13, INK2, bullets=True),
     ]))

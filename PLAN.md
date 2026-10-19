@@ -111,3 +111,20 @@ Produces `data/raw/` (FHIR style EHR bundles, device style exports for hero pati
 - [x] Patient search in the top bar (/ or Ctrl K).
 - [x] One vocabulary: glucose forecast, Try a change, heart risk, High glucose likely, Low glucose now, Mark as seen. Old addresses redirect.
 - [x] Accessibility audit clean in both themes; 34 tests pass.
+
+## Version 1.4: evidence, follow up, roles and consent
+
+- [x] Alert load measured with the deployed code on test patients (`reports/followup.md`); ward compares today's count with a typical day at that hour.
+- [x] Heart risk stress test against our own simulator; stated plainly on the model page, model card, README and video.
+- [x] Earlier alerts and what happened, per patient: outcome, warning time, actions, highs with no alert; track record on Today.
+- [x] First week mode: record based parameters before day 7, possible highs not pushed, explained on screen; demo jump to 17 Feb.
+- [x] 24 hour and 7 day what ifs show the change against the usual plan; levels on request.
+- [x] Banner actions by alert type (check now, call, book a review); Mark as seen per alert; Clinical note in the banner; tidier header.
+- [x] Ward and patient list grouped by urgency with reasons; list count, fade and More below; deep links into the heart section.
+- [x] n for the next unseen alert; shift handover page; daily digest; desktop notifications for confirmed alerts only.
+- [x] Undo for 10 seconds on acknowledgements, actions, meals, plans and consent; first use tips; loading previews.
+- [x] Patients log meals and manage consent from their page; units, time zone and larger text in Settings.
+- [x] Insulin (population action), evening metformin timing, week plans with a one week adherence and outcome check.
+- [x] Roles (doctor, nurse or health educator, patient) checked by the API; synthetic ABHA; simulated ABDM consent; Health Connect adapter.
+- [x] 43 tests pass; accessibility audit clean on 11 screens in both themes; tests use a temporary store.
+

@@ -4,7 +4,8 @@ import "@fontsource/noto-sans-tamil/400.css";
 import "@fontsource/noto-sans-tamil/600.css";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, fmt, hhmm, minuteToDate, type Lever } from "../api";
+import { api, fmt, hhmm, minuteToDate, type Lever, type Session } from "../api";
+import { ConsentPanel } from "../components/ConsentPanel";
 import { store, stored, useLive, useLiveData } from "../live";
 
 type Lang = "en" | "hi" | "ta";
@@ -22,6 +23,13 @@ const LEVER_KEY = (r: Lever["request"]): string => {
 
 const T: Record<Lang, Record<string, string>> = {
   en: {
+    logHead: "Tell your care team about a meal", logNote: "It goes straight into your glucose forecast.", when: "When", food: "Food", size: "How much",
+    eatnow: "Eating now", ago: "Ate 30 minutes ago", later: "In 1 hour", small: "Small", usual: "Usual", large: "Large", send: "Send",
+    sent: "Sent. Your care team can see it.", dataHead: "Your data sharing",
+    dataNote: "You can stop sharing at any time. Your care team will then stop seeing new readings from that source.",
+    granted: "Shared", withdrawn: "Withdrawn", withdraw: "Stop sharing", grant: "Share again", since: "since", back: "Back to",
+    rice_meal: "Rice, dal, sabzi", roti_meal: "Roti, dal, sabzi", millet_meal: "Ragi or jowar meal", idli_dosa: "Idli or dosa",
+    poha_upma: "Poha or upma", biryani: "Biryani", tea_snack: "Tea with biscuits", fruit: "Fruit and milk", team: "your care team",
     title: "{name}, what could help tonight", now: "Your glucose now: {g} mg/dL.",
     forecast: "After your next meal it may rise to about {peak} mg/dL, around {time}.",
     calm: "Your glucose is expected to stay in the healthy range for the next two hours.",
@@ -35,6 +43,13 @@ const T: Record<Lang, Record<string, string>> = {
     sleep: "Sleep seven and a half hours for the next three nights", combo: "Walk 15 minutes and eat millets", other: "Other change",
   },
   hi: {
+    logHead: "अपनी देखभाल टीम को भोजन के बारे में बताएँ", logNote: "यह सीधे आपकी शुगर के पूर्वानुमान में जुड़ जाता है।", when: "कब", food: "भोजन", size: "कितना",
+    eatnow: "अभी खा रहे हैं", ago: "30 मिनट पहले खाया", later: "1 घंटे में", small: "कम", usual: "सामान्य", large: "ज़्यादा", send: "भेजें",
+    sent: "भेज दिया। आपकी देखभाल टीम इसे देख सकती है।", dataHead: "आपके डेटा की साझेदारी",
+    dataNote: "आप कभी भी साझा करना बंद कर सकते हैं। तब आपकी देखभाल टीम को उस स्रोत की नई रीडिंग नहीं दिखेंगी।",
+    granted: "साझा", withdrawn: "वापस लिया गया", withdraw: "साझा करना बंद करें", grant: "फिर से साझा करें", since: "से", back: "वापस",
+    rice_meal: "चावल, दाल, सब्ज़ी", roti_meal: "रोटी, दाल, सब्ज़ी", millet_meal: "रागी या ज्वार का भोजन", idli_dosa: "इडली या डोसा",
+    poha_upma: "पोहा या उपमा", biryani: "बिरयानी", tea_snack: "चाय और बिस्कुट", fruit: "फल और दूध", team: "आपकी देखभाल टीम",
     title: "{name}, आज रात किन बातों से मदद मिल सकती है", now: "अभी आपकी शुगर: {g} mg/dL.",
     forecast: "अगले भोजन के बाद लगभग {time} बजे यह {peak} mg/dL तक जा सकती है।",
     calm: "अगले दो घंटों में आपकी शुगर सामान्य सीमा में रहने की उम्मीद है।",
@@ -48,6 +63,13 @@ const T: Record<Lang, Record<string, string>> = {
     sleep: "अगली तीन रातें साढ़े सात घंटे सोएँ", combo: "15 मिनट टहलें और मिलेट खाएँ", other: "अन्य बदलाव",
   },
   ta: {
+    logHead: "உங்கள் மருத்துவக் குழுவிடம் உணவைப் பற்றி சொல்லுங்கள்", logNote: "இது நேரடியாக உங்கள் சர்க்கரை முன்கணிப்பில் சேரும்.", when: "எப்போது", food: "உணவு", size: "எவ்வளவு",
+    eatnow: "இப்போது சாப்பிடுகிறேன்", ago: "30 நிமிடங்களுக்கு முன் சாப்பிட்டேன்", later: "1 மணி நேரத்தில்", small: "குறைவாக", usual: "வழக்கம் போல்", large: "அதிகமாக", send: "அனுப்பு",
+    sent: "அனுப்பப்பட்டது. உங்கள் மருத்துவக் குழு இதைப் பார்க்கலாம்.", dataHead: "உங்கள் தரவுப் பகிர்வு",
+    dataNote: "எப்போது வேண்டுமானாலும் பகிர்வை நிறுத்தலாம். அதன் பிறகு அந்த மூலத்திலிருந்து புதிய அளவீடுகள் உங்கள் மருத்துவக் குழுவுக்குத் தெரியாது.",
+    granted: "பகிரப்படுகிறது", withdrawn: "திரும்பப் பெறப்பட்டது", withdraw: "பகிர்வை நிறுத்து", grant: "மீண்டும் பகிர்", since: "முதல்", back: "திரும்ப",
+    rice_meal: "சாதம், பருப்பு, காய்கறி", roti_meal: "சப்பாத்தி, பருப்பு, காய்கறி", millet_meal: "கேழ்வரகு அல்லது சோள உணவு", idli_dosa: "இட்லி அல்லது தோசை",
+    poha_upma: "அவல் அல்லது உப்புமா", biryani: "பிரியாணி", tea_snack: "டீ மற்றும் பிஸ்கட்", fruit: "பழம் மற்றும் பால்", team: "உங்கள் மருத்துவக் குழு",
     title: "{name}, இன்றிரவு எது உதவக்கூடும்", now: "இப்போது உங்கள் சர்க்கரை அளவு: {g} mg/dL.",
     forecast: "அடுத்த உணவுக்குப் பிறகு இது சுமார் {time} மணிக்கு {peak} mg/dL வரை உயரலாம்.",
     calm: "அடுத்த இரண்டு மணி நேரம் உங்கள் சர்க்கரை அளவு சரியான வரம்பில் இருக்கும் என எதிர்பார்க்கப்படுகிறது.",
@@ -64,9 +86,41 @@ const T: Record<Lang, Record<string, string>> = {
 
 const fill = (s: string, v: Record<string, string | number>) => s.replace(/\{(\w+)\}/g, (_, k) => String(v[k] ?? ""));
 
+const FOODS: [string, number][] = [["rice_meal", 90], ["roti_meal", 70], ["millet_meal", 60], ["idli_dosa", 55], ["poha_upma", 50],
+  ["biryani", 95], ["tea_snack", 20], ["fruit", 25]];
+const SIZES: [string, number][] = [["small", 0.6], ["usual", 1], ["large", 1.4]];
+const WHENS: [string, number][] = [["eatnow", 0], ["ago", -30], ["later", 60]];
+
+/** Patients log their own meals from the link their care team sent; it is entered as the patient, with an audit trail. */
+function PatientMeal({ pid, t, as }: { pid: string; t: Record<string, string>; as: Session }) {
+  const { refresh } = useLive();
+  const [food, setFood] = useState("rice_meal");
+  const [size, setSize] = useState(1);
+  const [when, setWhen] = useState(0);
+  const [msg, setMsg] = useState("");
+  const send = () => {
+    const carbs = Math.round((FOODS.find(f => f[0] === food)![1] * size) / 5) * 5;
+    api.addMeal(pid, { minutes_from_now: when, carbs, kind: food, label: t[food] }, as)
+      .then(() => { setMsg(t.sent); refresh(); }).catch(e => setMsg(e.message));
+  };
+  return (
+    <section className="share-log no-print">
+      <h2>{t.logHead}</h2>
+      <p className="small muted">{t.logNote}</p>
+      <div className="share-form">
+        <label>{t.food}<select value={food} onChange={e => setFood(e.target.value)}>{FOODS.map(([k]) => <option key={k} value={k}>{t[k]}</option>)}</select></label>
+        <label>{t.size}<select value={size} onChange={e => setSize(+e.target.value)}>{SIZES.map(([k, v]) => <option key={k} value={v}>{t[k]}</option>)}</select></label>
+        <label>{t.when}<select value={when} onChange={e => setWhen(+e.target.value)}>{WHENS.map(([k, v]) => <option key={k} value={v}>{t[k]}</option>)}</select></label>
+        <button className="btn primary" onClick={send}>{t.send}</button>
+      </div>
+      {msg && <p role="status">{msg}</p>}
+    </section>
+  );
+}
+
 export function Share() {
   const { id = "" } = useParams();
-  const { clinician, clock } = useLive();
+  const { clinician, clock, user } = useLive();
   const [lang, setLangState] = useState<Lang>(() => (stored("prativimb-share-lang", "en") as Lang));
   const setLang = (l: Lang) => { setLangState(l); store("prativimb-share-lang", l); };
   const det = useLiveData(() => api.patient(id), [id]).data;
@@ -75,6 +129,9 @@ export function Share() {
   const t = T[lang];
   if (!det || !fc || !lev) return <main className="share" lang={lang}><p className="empty">Preparing.</p></main>;
   const first = det.patient.name.split(" ")[0];
+  // Whoever opens the patient's link acts as the patient (as with a link sent by message); a signed in clinician stays themselves.
+  const asPatient: Session = { role: "patient", name: first, pid: id };
+  const clinicianView = Boolean(user && user.role !== "patient");
   const st = fc.available ? fc.status : null;
   const helpful = lev.levers.filter(l => l.peak <= -5).slice(0, 4);
   const lines: string[] = [fill(t.title, { name: first })];
@@ -90,7 +147,7 @@ export function Share() {
   return (
     <main className="share" lang={lang} id="main">
       <div className="share-tools no-print">
-        <Link to={`/patient/${id}`} className="small">Back to the patient twin</Link>
+        {clinicianView && <Link to={`/patient/${id}`} className="small">{t.back} {det.patient.name}</Link>}
         <label className="small">{t.lang}{" "}
           <select value={lang} onChange={e => setLang(e.target.value as Lang)}>
             <option value="en">English</option><option value="hi">हिन्दी</option><option value="ta">தமிழ்</option>
@@ -110,7 +167,13 @@ export function Share() {
         </ol>
       ) : <p>{t.none}</p>}
       <p className="share-disclaimer">{t.disclaimer}</p>
-      <p className="small muted">{fill(t.footer, { date, who: clinician })}</p>
+      <PatientMeal pid={id} t={t} as={asPatient} />
+      <section className="share-data no-print">
+        <h2>{t.dataHead}</h2>
+        <p className="small muted">{t.dataNote}</p>
+        <ConsentPanel pid={id} as={asPatient} labels={{ granted: t.granted, withdrawn: t.withdrawn, withdraw: t.withdraw, grant: t.grant, since: t.since }} />
+      </section>
+      <p className="small muted">{fill(t.footer, { date, who: clinicianView ? clinician : t.team })}</p>
       {lang !== "en" && <p className="small muted no-print">Hindi and Tamil text is a draft for review by a native speaking clinician before use with patients.</p>}
     </main>
   );

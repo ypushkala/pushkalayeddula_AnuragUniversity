@@ -82,6 +82,9 @@ class PatientDetail(BaseModel):
     device: str
     context: list[str]
     split: str
+    abha: str = ""
+    records_withheld: bool = False
+    calibrating: int | None = None
 
 
 class ClockUpdate(BaseModel):
@@ -99,7 +102,10 @@ class WhatIfRequest(BaseModel):
     sleep_hours: float | None = Field(None, ge=3, le=10)
     night_shift: bool = False
     scope: Literal["next", "all"] = "next"
-    horizon_h: Literal[6, 24] = 6
+    horizon_h: Literal[6, 24, 168] = 6
+    insulin_bolus_units: float = Field(0.0, ge=0, le=20, description="Rapid acting insulin with each targeted main meal")
+    insulin_basal_units: float = Field(0.0, ge=0, le=40, description="Long acting insulin per day, at steady state")
+    metformin_shift_hours: float = Field(0.0, ge=-3, le=3, description="Move the evening metformin dose")
 
 
 class MealEntry(BaseModel):
@@ -107,11 +113,29 @@ class MealEntry(BaseModel):
     carbs: float = Field(..., gt=0, le=250)
     kind: str = "rice_meal"
     label: str = Field("Meal", max_length=80)
-    by: str = Field("Clinician", max_length=60)
+    by: str = Field("", max_length=60)
 
 
 class Acknowledge(BaseModel):
     kind: Literal["spike", "low", "cardio"]
-    by: str = Field(..., min_length=1, max_length=60)
+    by: str = Field("", max_length=60)
     snooze_minutes: int = Field(60, ge=0, le=720)
     note: str = Field("", max_length=280)
+
+
+class Action(BaseModel):
+    kind: Literal["call", "review", "check"]
+    note: str = Field("", max_length=280)
+    outcome: str = Field("", max_length=280)
+    alert: Literal["spike", "low", "cardio", ""] = ""
+
+
+class Plan(BaseModel):
+    label: str = Field(..., min_length=1, max_length=120)
+    request: dict
+    predicted: dict = {}
+
+
+class Consent(BaseModel):
+    source: Literal["cgm", "wearable", "abdm"]
+    granted: bool

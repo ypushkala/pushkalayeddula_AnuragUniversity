@@ -48,9 +48,15 @@ class Inputs:
     dose: np.ndarray
     smod: np.ndarray
     dawn: np.ndarray
+    ins: np.ndarray | None = None  # injected insulin appearing in plasma, uU/mL per min (what if only)
 
     def column(self, s: int) -> dict:
-        return {"af": self.af[:, s], "A": self.A[:, s], "smod": self.smod[:, s], "dawn": self.dawn[:, s]}
+        return {"af": self.af[:, s], "A": self.A[:, s], "smod": self.smod[:, s], "dawn": self.dawn[:, s],
+                "ins": 0.0 if self.ins is None else self.ins[:, s]}
+
+    def window(self, a: int, b: int | None = None) -> "Inputs":
+        cut = lambda x: None if x is None else x[:, a:b]
+        return Inputs(*(cut(getattr(self, f)) for f in ("carbs", "af", "A", "dose", "smod", "dawn", "ins")))
 
 
 def steady_state(p: dict, G0: np.ndarray | float, on_met: np.ndarray | float) -> np.ndarray:
@@ -72,7 +78,7 @@ def deriv(x: np.ndarray, p: dict, u: dict) -> np.ndarray:
     return np.stack([
         -(p["SG"] + X) * G + p["SG"] * p["Gb"] * hep + p["cf"] * Ra - p["eE"] * E * G,
         -POP["p2"] * X + POP["p2"] * p["SI"] * u["smod"] * (I - POP["Ib"]),
-        -POP["n"] * (I - POP["Ib"]) + p["gamma"] * np.maximum(G - p["Gb"], 0),
+        -POP["n"] * (I - POP["Ib"]) + p["gamma"] * np.maximum(G - p["Gb"], 0) + u.get("ins", 0.0),
         -ka * Q1,
         ka * (Q1 - Q2),
         (u["A"] - E) / POP["tauE"],
@@ -124,6 +130,7 @@ def run_ivp(p: dict, x0: np.ndarray, u: Inputs) -> np.ndarray:
     def rhs(t, y):
         s = min(int(t // DT), S - 1)
         c = {k: float(v[0, s]) for k, v in (("af", u.af), ("A", u.A), ("smod", u.smod), ("dawn", u.dawn))}
+        c["ins"] = 0.0 if u.ins is None else float(u.ins[0, s])
         return deriv(y, ps, c)
 
     for s in range(S):

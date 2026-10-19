@@ -1,6 +1,6 @@
 import * as Plot from "@observablehq/plot";
 import type { Forecast, Timeline } from "../api";
-import { fmt, hhmm } from "../api";
+import { fmt, hhmm, glu, gluTick, gluUnit } from "../api";
 import { useLive } from "../live";
 import { PlotFigure, baseStyle } from "./PlotFigure";
 
@@ -23,7 +23,7 @@ export function ForecastChart({ tl, fc, stepsPreview }: { tl: Timeline; fc: Fore
   const main = () => ({
     ...M, height: 330, marginTop: 20, marginBottom: 26, style: baseStyle(p.ink3),
     x: xScale,
-    y: { domain: [40, ymax], ticks: [70, 100, 140, 180, 250, 300, 350].filter(v => v < ymax), label: "mg/dL", labelAnchor: "top" as const },
+    y: { domain: [40, ymax], ticks: [70, 100, 140, 180, 250, 300, 350].filter(v => v < ymax), label: gluUnit(), labelAnchor: "top" as const, tickFormat: gluTick },
     marks: [
       Plot.rect([0], { x1: x0, x2: x1, y1: 70, y2: 180, fill: p.band }),
       Plot.gridY({ stroke: p.rule, strokeOpacity: 1, ticks: [70, 180, 250] }),
@@ -39,10 +39,10 @@ export function ForecastChart({ tl, fc, stepsPreview }: { tl: Timeline; fc: Fore
         ? [Plot.text([fpts[peakIdx]], { x: "t", y: "mid", text: (r: any) => `${fmt(r.mid)} at ${hhmm(r.t)}`, dy: -12,
             fill: p.ink, fontSize: 13, fontWeight: 500, stroke: p.paper, strokeWidth: 3, paintOrder: "stroke" })]
         : []),
-      Plot.text([180], { x: x1, y: (v: number) => v, text: () => "180", dx: 6, textAnchor: "start", fill: p.ink3 }),
-      Plot.text([70], { x: x1, y: (v: number) => v, text: () => "70", dx: 6, textAnchor: "start", fill: p.ink3 }),
+      Plot.text([180], { x: x1, y: (v: number) => v, text: () => gluTick(180), dx: 6, textAnchor: "start", fill: p.ink3 }),
+      Plot.text([70], { x: x1, y: (v: number) => v, text: () => gluTick(70), dx: 6, textAnchor: "start", fill: p.ink3 }),
       Plot.tip(cgm.filter(r => r.v !== null), Plot.pointerX({ x: "t", y: "v", fill: p.paper, stroke: p.ruleStrong,
-        title: (r: any) => `${hhmm(r.t)}  ${fmt(r.v)} mg/dL` })),
+        title: (r: any) => `${hhmm(r.t)}  ${glu(r.v)} ${gluUnit()}` })),
       Plot.tip(fpts, Plot.pointerX({ x: "t", y: "mid", fill: p.paper, stroke: p.ruleStrong,
         title: (r: any) => `${hhmm(r.t)} forecast ${fmt(r.mid)} (90%: ${fmt(r.lo)} to ${fmt(r.hi)})` })),
     ],
@@ -99,11 +99,11 @@ export function ForecastChart({ tl, fc, stepsPreview }: { tl: Timeline; fc: Fore
           <span><i style={{ borderColor: p.ink }} />Measured</span>
           <span><i style={{ borderColor: p.accent }} />Forecast</span>
           <span><i className="band" style={{ background: p.accent, opacity: 0.3 }} />Likely range</span>
-          <span><i className="band" style={{ background: p.band, outline: `1px solid ${p.rule}` }} />Target, 70 to 180</span>
+          <span><i className="band" style={{ background: p.band, outline: `1px solid ${p.rule}` }} />Target, {gluTick(70)} to {gluTick(180)}</span>
         </div>
       </div>
       <PlotFigure spec={main} ariaLabel="Glucose history and forecast" />
-      <p className="small muted band-note">The shaded band holds 9 in 10 future readings. A red dot marks a likely rise above 180.</p>
+      <p className="small muted band-note">The shaded band holds 9 in 10 future readings. A red dot marks a likely rise above {gluTick(180)}.</p>
       <div className="label" style={{ margin: "8px 0 0" }}>Meals, medicines and sleep</div>
       <PlotFigure spec={lanes} ariaLabel="Meals, medication doses and sleep stages" />
       <div className="legend" style={{ margin: "0 0 2px 44px" }}>

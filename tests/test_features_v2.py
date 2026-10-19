@@ -29,18 +29,20 @@ def test_low_labels_need_two_readings_below_70():
     assert list(y) == [0, 1, 0]
 
 
+DOCTOR = {"X-Prativimb-Role": "doctor", "X-Prativimb-User": "Dr%20Test"}
+
+
 @pytest.fixture(scope="module")
-def client():
+def client(tmp_path_factory):
     from fastapi.testclient import TestClient
-    from prativimb import config
-    from prativimb.api.main import app
-    for f in ("clinical_store.json", "audit.jsonl"):
-        (config.ARTIFACT_DIR / f).unlink(missing_ok=True)
-    with TestClient(app) as c:
+    from prativimb.api import store
+    tmp = tmp_path_factory.mktemp("store")
+    store.STORE, store.AUDIT = tmp / "clinical_store.json", tmp / "audit.jsonl"  # never the demo's own store
+    from prativimb.api import main
+    main.STATE = None
+    with TestClient(main.app) as c:
         c.post("/api/clock", json={"at": DEMO, "paused": True})
         yield c
-    for f in ("clinical_store.json", "audit.jsonl"):
-        (config.ARTIFACT_DIR / f).unlink(missing_ok=True)
 
 
 @needs_data
@@ -48,21 +50,22 @@ def client():
 def test_planned_meal_changes_forecast_and_can_be_removed(client):
     before = client.get("/api/patients/PTV-0001/forecast").json()["status"]["peak"]
     m = client.post("/api/patients/PTV-0001/meals", json={"minutes_from_now": 75, "carbs": 50, "kind": "millet_meal",
-                                                          "label": "Ragi roti", "by": "Test"}).json()
+                                                          "label": "Ragi roti"}, headers=DOCTOR).json()
     assert m["type"] == "planned"
     after = client.get("/api/patients/PTV-0001/forecast").json()["status"]["peak"]
     assert after < before - 20
-    client.delete(f"/api/patients/PTV-0001/meals/{m['id']}")
+    client.delete(f"/api/patients/PTV-0001/meals/{m['id']}", headers=DOCTOR)
     assert abs(client.get("/api/patients/PTV-0001/forecast").json()["status"]["peak"] - before) < 1
 
 
 @needs_data
 @needs_models
 def test_acknowledged_alert_drops_in_ward_until_snooze_ends(client):
-    ids = lambda: [p["id"] for p in client.get("/api/ward").json()["patients"]]
+    # Within its urgency group, a seen alert moves below the ones nobody has seen.
+    ids = lambda: [p["id"] for p in client.get("/api/ward").json()["patients"] if p["group"] == "high"]
     assert ids()[0] == "PTV-0001"
-    client.post("/api/patients/PTV-0001/ack", json={"kind": "spike", "by": "Dr Test", "snooze_minutes": 30})
-    assert ids().index("PTV-0001") > 5
+    client.post("/api/patients/PTV-0001/ack", json={"kind": "spike", "snooze_minutes": 30}, headers=DOCTOR)
+    assert ids()[-1] == "PTV-0001"
     client.post("/api/clock", json={"at": "2026-03-15T20:20:00+05:30", "paused": True})
     card = client.get("/api/patients/PTV-0001/forecast").json()["alerts"]
     assert all(c.get("ack") is None for c in card)

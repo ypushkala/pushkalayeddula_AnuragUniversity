@@ -15,9 +15,13 @@ ROOT = Path(__file__).resolve().parent.parent
 AXE = ROOT / "frontend" / "node_modules" / "axe-core" / "axe.min.js"
 WEB = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8000"
 PAGES = [("/", "table.ward tbody tr.row"), ("/patient/PTV-0001", ".b-title"), ("/patient/PTV-0001/try", ".lever-card"),
-         ("/patient/PTV-0001/record", ".record"),
+         ("/patient/PTV-0001/record", "table.episodes"), ("/handover", ".handover h1"), ("/digest", ".digest-nums"),
          ("/patient/PTV-0003?heart=26", "table.heat"), ("/note/PTV-0001", "article.note"), ("/model", "table.data"),
          ("/share/PTV-0001", ".share h1")]
+
+
+SESSION = "localStorage.setItem('prativimb-session', JSON.stringify({role: 'doctor', name: 'Dr Rao'}));" \
+          "localStorage.setItem('prativimb-hints', JSON.stringify(['banner', 'ward', 'difference']));"
 
 
 def main() -> int:
@@ -30,10 +34,10 @@ def main() -> int:
         for theme in ("light", "dark"):
             ctx = browser.new_context(viewport={"width": 1440, "height": 900}, color_scheme=theme)
             page = ctx.new_page()
-            page.add_init_script(f"localStorage.setItem('prativimb-theme', '{theme}')")
-            for path, sel in PAGES:
+            page.add_init_script(f"localStorage.setItem('prativimb-theme', '{theme}');" + SESSION)
+            for path, sel in PAGES + [("/signin", "fieldset.roles")]:
                 page.goto(WEB + path, wait_until="load")
-                page.wait_for_selector(sel, timeout=60000)
+                page.wait_for_selector(sel, timeout=90000)
                 page.wait_for_timeout(1200)
                 page.add_script_tag(path=str(AXE))
                 res = page.evaluate("""async () => (await axe.run(document, {runOnly: {type: 'tag',

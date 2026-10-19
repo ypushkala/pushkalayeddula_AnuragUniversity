@@ -35,10 +35,14 @@ A diabetes and cardiometabolic clinic monitors patients remotely between visits.
 
 * **Event A, glucose spike forecast.** Two hours ahead, flag glucose above 180 mg/dL from CGM, steps, heart rate, sleep, meal logs and the EHR. Two tiers: *watch* (point forecast crosses 180; shown, not pushed) and *alert* (the conformal lower bound crosses 180; pushed to the ward list). Lows are flagged too.
 * **Event B, cardiovascular risk flag.** From a rolling seven day window of resting heart rate, HRV (RMSSD), sleep architecture and activity, conditioned on hypertension, lipids and family history, estimate the risk of an event in the next three days, with a weekly trajectory and the top contributing factors.
-* **Try a change.** Re-simulate the next six hours under a walk, a food swap, a meal time shift, a missed metformin dose, different sleep or a night shift, and compare peak glucose and time above range.
+* **Try a change.** Re-simulate tonight, the next 24 hours or the next 7 days under a walk, a food swap, a meal time shift, a missed metformin dose, different sleep, a night shift, moving the evening metformin, or (simulated with typical insulin action) mealtime or long acting insulin. A day or a week ahead the chart shows the change against the usual plan, because the absolute level drifts.
+* **Plans and the one week check.** A doctor can agree a 7 day plan with the patient. A week later the dashboard compares time in range before and after with what the forecast expected, and checks from the data whether the plan was followed (walks after meals from steps, food swaps from the meal log, sleep from the wearable).
 * **Record.** One click SOAP note (printable page and PDF) of the twin's findings.
 * **Low glucose.** A dedicated model for glucose below 70 mg/dL within 60 minutes, with overnight sensor compression artefacts recognised and reported as such instead of as lows.
-* **Working the list.** Clinicians acknowledge and snooze alerts (with an audit trail), tell the twin about a planned or eaten meal so the forecast updates at once, see what changed since they last looked, and share a large type summary with the patient in English, Hindi or Tamil.
+* **Working the list.** The ward groups patients by urgency (lows, likely highs, raised heart risk) and says in a few words why each alert fired. The first action fits the alert: check the patient now for a low, call the patient or book a review for heart risk, try a change for a likely high. Clinicians mark alerts as seen (choosing which ones), record calls and checks, log planned or eaten meals, and can undo any of it for 10 seconds. A shift handover page lists what was done, by whom, and what is still open; a daily digest summarises the day before for email; new confirmed alerts can raise a desktop notification.
+* **Follow up.** Every patient has *Earlier alerts and what happened*: each alert in the last 7 days, what the forecast said, whether it came true, how much warning it gave, what the team did, and how many highs came with no alert.
+* **New patients.** In a patient's first week the forecast runs on values from the health record, says so, and does not push possible highs to the ward.
+* **Patients, roles and consent.** Doctors, nurses or health educators, and patients sign in to different permissions, checked by the service. Patients log meals and withdraw or grant sharing of glucose, wearable data and ABDM records from their own page, and the service stops using a withdrawn source.
 
 Three fictional demo patients carry the story:
 
@@ -54,9 +58,15 @@ Three fictional demo patients carry the story:
 | **Low glucose to rebound around iftar** | **Heart risk week** |
 | ![Fatima](docs/screenshots/04_twin_fatima_iftar.png) | ![Heart risk](docs/screenshots/05_cardio_suresh.png) |
 
-More screens (clinical note, model card, patient view, phone layout, dark mode) are in [`docs/screenshots/`](docs/screenshots/).
+| **Earlier alerts and what happened** | **A plan and its one week check** |
+|---|---|
+| ![Earlier alerts](docs/screenshots/15_earlier_alerts.png) | ![Week plan](docs/screenshots/16_week_plan.png) |
+| **Shift handover** | **A new patient's first week** |
+| ![Handover](docs/screenshots/17_handover.png) | ![First week](docs/screenshots/19_first_week.png) |
 
-**Using it.** The ward opens on the patients who need attention, and one line says what changed since your last visit; `j` and `k` move and `Enter` opens. Find any patient from the top bar with `/` or `Ctrl K`. On a patient, a slim list of everyone needing attention stays on the left, **Previous** and **Next** (or `Alt` and the arrow keys) step through it, and the ward keeps its scroll position when you go back. Under the name, one banner gives the most important alert with its actions: **Mark as seen**, **Try a change**, **Log a meal** and **Share with** the patient. Three tabs are named after tasks: **Today** (glucose, the forecast, why it says this, and a one line heart risk summary that opens into the week), **Try a change** (the changes that help this patient most, as cards) and **Record** (two week pattern, history, medicines, labs). **Clinical note** opens a printable sheet. Demo controls (play, speed, jump to 17:30, 18:00, 19:45) sit in a separate strip at the bottom, apart from the clinical screens. Every chart has a *Show as table* option.
+More screens (clinical note, model card, daily digest, sign in, patient view in Hindi, phone layout, dark mode) are in [`docs/screenshots/`](docs/screenshots/).
+
+**Using it.** Sign in as a doctor, a nurse or health educator, or a patient (no password in the demo). The ward opens on the patients who need attention, grouped by urgency, with a line comparing the count to a typical day at that hour and one line on what changed since your last visit; `j` and `k` move, `Enter` opens, and `n` anywhere opens the next alert nobody has seen. Find any patient from the top bar with `/` or `Ctrl K`. On a patient, a slim list of everyone needing attention stays on the left, **Previous** and **Next** (or `Alt` and the arrow keys) step through it, and the ward keeps its scroll position when you go back. Under the name, one banner gives the most important alert with actions that fit it, plus **Share with** the patient and **Clinical note** (a printable sheet). Three tabs are named after tasks: **Today** (glucose, the forecast, why it says this, its track record for this patient, and a heart risk line that opens into the week), **Try a change** (agreed plans, then the changes that help most tonight, over a day or over a week) and **Record** (earlier alerts and what happened, the two week pattern, care team actions, the health record, and data and consent). **Settings** switch glucose units (mg/dL or mmol/L), India or local time, larger text, tips and desktop notifications. Demo controls (play, speed, jump to 17 Feb for new patients, 17:30, 18:00, 19:45) sit in a separate strip at the bottom. Every chart has a *Show as table* option.
 
 ## 5. Technical stack
 
@@ -129,6 +139,10 @@ All metrics on **40 test patients** never used for training, early stopping or c
 | Events flagged in the 3 days before, at operating point | 5 of 6 (median lead 3 days, 94% specificity) |
 
 | Low glucose, flagged in advance (classifier against point forecast) | 37% against 18%, 61% precision, 0.19 false alarms per patient day |
+
+**Alert load** ([`reports/followup.md`](reports/followup.md)): per patient per day, 1.33 confident high glucose alerts (94% came true within 2 h 15 min), 1.89 possible highs (patient page only) and 1.06 low glucose alerts; 0.15 new heart risk flags per patient per week. A 200 patient ward would show a median of 25 patients needing attention (90th percentile 41).
+
+**How far to trust the heart risk flag.** Its events and their warning signs come from our own simulator, the one it learned from, so the 0.95 AUROC mostly shows it learned that simulator. With the simulated warning signs weakened to half strength it still flags 4 of 6 test events; at a quarter, 1 of 6, at the same specificity. It demonstrates the pipeline, not a clinical claim.
 
 ![Error by horizon](reports/figures/glucose_rmse_by_horizon.png)
 
@@ -231,10 +245,12 @@ Third party components and their licences:
 **Limitations**
 
 * Synthetic ground truth is still a model. The numbers show the method works end to end, not clinical performance.
-* Six cardiovascular events among test patients: intervals are wide, and the classifier has learned our simulated prodrome.
+* Six cardiovascular events among test patients: intervals are wide, and the classifier has learned our simulated prodrome. The stress test above shows how quickly it weakens if real warning signs are fainter; there is no real outcome validation.
 * Conformal coverage is approximate with serially correlated readings and lower in the hypoglycaemic range.
 * Unlogged and unplanned meals cause most missed spikes; the twin relies on the declared routine.
-* What-if effects are as good as the calibration week's excitation; the dawn effect is usually not identifiable from one week. Beyond about 6 hours the twin's absolute levels drift high for some patients, so the 24 hour view should be read as a comparison between scenarios.
+* What-if effects are as good as the calibration week's excitation; the dawn effect is usually not identifiable from one week. Beyond about 6 hours the twin's absolute levels drift high for some patients, so the 24 hour and 7 day views show the change against the usual plan. Insulin is simulated with population insulin action because nobody in the cohort uses insulin.
+* Lows are the noisiest alert (about one per patient per day, most brief dips under 70 in people without diabetes).
+* Sign in has no passwords and ABDM is simulated; a deployment needs the clinic's single sign on and a real consent manager integration.
 * On real traces, synthetic training alone is not enough: the residual model needs local retraining, the conformal margin needs per site recalibration, and twin forecasts should start from the last reading rather than the observer estimate.
 * Hindi and Tamil patient texts are drafts and need review by a native speaking clinician.
 
@@ -242,8 +258,9 @@ Third party components and their licences:
 
 * Retrospective validation on de-identified CGM and EHR data under ethics approval; an Indian food absorption library.
 * **Federated learning** of the residual and cardiovascular models across hospitals, with the twin kept per patient.
-* **ABDM integration**: ABHA health ID, consent manager, FHIR exchange with hospital systems.
-* **Real device APIs**: FreeStyle Libre and Dexcom, Android Health Connect, Apple HealthKit.
+* **ABDM integration**: a real consent manager and health information exchange behind the simulated ABHA and consent screens already in the dashboard.
+* **Real device APIs**: FreeStyle Libre and Dexcom cloud, and live Health Connect and HealthKit sync behind the existing export adapters.
+* Refitting each twin as new weeks of data arrive, so the track record can improve over time.
 * A prospective pilot with alert burden and time in range as outcomes, and a CDSCO software as a medical device pathway.
 
 ## 15. Submission checklist

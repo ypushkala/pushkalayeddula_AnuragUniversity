@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, dayToDate, dayMonth, fmt, hhmm, minuteToDate, type WardRow } from "../api";
-import { needsAttention } from "../components/PatientList";
+import { api, dayToDate, dayMonth, fmt, glu, gluUnit, hhmm, minuteToDate, T, type WardRow } from "../api";
+import { Hint } from "../components/Hint";
+import { GROUP_NAMES, needsAttention, patientLink } from "../components/PatientList";
 import { SkeletonRows } from "../components/Skeleton";
 import { Sparkline } from "../components/Sparkline";
 import { store, stored, useLive, useLiveData } from "../live";
@@ -23,24 +24,29 @@ function GlucoseNext({ r }: { r: WardRow }) {
   if (!a) return <span className="flag quiet">No recent reading</span>;
   const acked = a.ack ?? a.low_ack;
   let main;
+  if (r.sharing_paused.includes("cgm")) return <span className="flag quiet">Glucose sharing withdrawn</span>;
   if (a.low === "now") main = <span className={`flag ${a.low_ack ? "acked" : "alert"}`}><span className="mark solid" />Low glucose now</span>;
   else if (a.low === "forecast") main = <span className={`flag ${a.low_ack ? "acked" : "alert"}`}><span className="mark solid" />Low glucose likely within the hour</span>;
-  else if (a.tier === "alert") main = <span className={`flag ${a.ack ? "acked" : "alert"}`}><span className={`mark ${a.ack ? "" : "solid"}`} />High glucose likely by {hhmm(minuteToDate(a.cross_minute!))}, peak {fmt(a.peak)}</span>;
-  else if (a.tier === "watch") main = <span className="flag watch"><span className="mark" />Glucose may go high, peak {fmt(a.peak)}</span>;
+  else if (a.tier === "alert") main = <span className={`flag ${a.ack ? "acked" : "alert"}`}><span className={`mark ${a.ack ? "" : "solid"}`} />High glucose likely by {hhmm(minuteToDate(a.cross_minute!))}, peak {glu(a.peak)}</span>;
+  else if (a.tier === "watch") main = <span className="flag watch"><span className="mark" />Glucose may go high, peak {glu(a.peak)}{a.calibrating ? " (first week)" : ""}</span>;
   else if (a.tier === "high") main = <span className="flag quiet">Above range now</span>;
   else if (a.artefact) main = <span className="flag quiet">Low reading, probably the sensor</span>;
   else main = <span className="flag quiet">In range</span>;
-  return <div>{main}{acked && <div className="sub">Seen by {acked.by}</div>}</div>;
+  const why = a.tier === "alert" ? a.reason : a.low ? a.low_reason : "";
+  return <div>{main}{why && <div className="sub why-line">{T(why)}</div>}{acked && <div className="sub">Seen by {acked.by}</div>}</div>;
 }
 
 function Heart({ r }: { r: WardRow }) {
   const b = r.event_b;
   if (b.post_event) return <span className="flag quiet">Event on {b.event_minute !== undefined ? dayMonth(minuteToDate(b.event_minute)) : ""}</span>;
+  if (b.paused) return <span className="flag quiet">Wearable sharing withdrawn</span>;
   if (b.risk === null) return <span className="flag quiet">No data</span>;
   if (b.flag) return (
     <div>
       <span className={`flag ${b.ack ? "acked" : "alert"}`}><span className={`mark ${b.ack ? "" : "solid"}`} />Raised</span>
       <div className="sub">{fmt(b.risk * 100)}% in 3 days{b.flag_since !== null && b.flag_since !== undefined ? `, since ${dayMonth(dayToDate(b.flag_since))}` : ""}</div>
+      {b.reason && <div className="sub why-line">{b.reason}</div>}
+      {b.ack && <div className="sub">Seen by {b.ack.by}</div>}
     </div>
   );
   return <span className="flag quiet">Normal</span>;
@@ -97,6 +103,8 @@ function SinceLastLooked({ rows, now }: { rows: WardRow[]; now: string }) {
 export function Ward() {
   const { clock } = useLive();
   const { data, error } = useLiveData(() => api.ward(), []);
+  const [typical, setTypical] = useState<Record<string, number> | null>(null);
+  useEffect(() => { api.modelCard().then(m => setTypical(m.followup?.alert_load?.by_hour_of_200 ?? null)).catch(() => {}); }, []);
   const [filter, setFilter] = useState<Filter>(() => (stored("prativimb-ward-filter", "attention") as Filter));
   const [q, setQ] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -133,7 +141,7 @@ export function Ward() {
   useEffect(() => {
     if (!byKeyboard.current) return;
     byKeyboard.current = false;
-    (body.current?.children[cursor] as HTMLElement | undefined)?.focus();
+    (body.current?.querySelectorAll("tr.row")[cursor] as HTMLElement | undefined)?.focus();
   }, [cursor]);
   useEffect(() => setCursor(0), [filter, q]);
   useEffect(() => {
@@ -149,7 +157,7 @@ export function Ward() {
     if (y > 0) window.requestAnimationFrame(() => window.scrollTo(0, y));
   }, [data]);
 
-  if (error) return <p className="empty">Could not reach the twin service ({error}). Is the API running on port 8000?</p>;
+  if (error) return <p className="empty">Could not reach the Prativimb service ({error}). Is the API running on port 8000?</p>;
   const p = data?.patients ?? [];
   const counts = { attention: p.filter(needsAttention).length, all: p.length, story: p.filter(r => r.hero).length };
   const labels: Record<Filter, string> = { attention: "Needs attention", all: "All patients", story: "Demo patients" };
@@ -165,6 +173,12 @@ export function Ward() {
         <div>
           <h1>Ward</h1>
           <div className="meta">{counts.all || 200} patients on remote monitoring{clock && <>, as of {hhmm(clock.now)}</>}</div>
+          {data && clock && typical && (() => {
+            const hour = Number(new Date(clock.now).toLocaleString("en-GB", { hour: "2-digit", hour12: false, timeZone: "Asia/Kolkata" }));
+            const t = typical[String(hour)];
+            return t !== undefined ? <div className="meta muted">{counts.attention} need attention now; on a typical day at this hour a ward like this has about {fmt(t)}.</div> : null;
+          })()}
+          {data?.patients[0]?.calibrating && <div className="meta notice-inline">First week of monitoring (day {data.patients[0].calibrating} of 7): the glucose forecast is still learning, so possible highs are not pushed.</div>}
         </div>
       </div>
       {data && clock && <SinceLastLooked rows={data.patients} now={clock.now} />}
@@ -175,11 +189,12 @@ export function Ward() {
           </button>
         ))}
       </div>
+      <Hint id="ward">Grouped by urgency: lows first, then likely highs, then heart risk. The grey line under each alert says why. Press n to open the next alert nobody has seen.</Hint>
       <table className="ward">
         <thead>
           <tr>
             <th scope="col">Patient</th>
-            <th scope="col" className="r">Glucose now</th>
+            <th scope="col" className="r">Glucose now, {gluUnit()}</th>
             <th scope="col">Glucose forecast, next 2 hours</th>
             <th scope="col">Heart risk</th>
             <th scope="col" className="hide-md">Last 24 hours</th>
@@ -188,21 +203,27 @@ export function Ward() {
         {!data ? <SkeletonRows cols={5} /> : (
           <tbody ref={body}>
             {rows.map((r, i) => (
-              <tr key={r.id} className={`row ${i === cursor ? "cursor" : ""}`} onClick={() => nav(`/patient/${r.id}`)} tabIndex={0}
-                onFocus={() => setCursor(i)} onKeyDown={e => e.key === "Enter" && nav(`/patient/${r.id}`)}
+              <Fragment key={r.id}>
+              {!q && filter !== "story" && r.group !== rows[i - 1]?.group && (
+                <tr className="group-row"><th colSpan={5} scope="colgroup">{r.group ? GROUP_NAMES[r.group] : "No alerts"}{" "}
+                  <span className="muted">{rows.filter(x => x.group === r.group).length}</span></th></tr>
+              )}
+              <tr className={`row ${i === cursor ? "cursor" : ""}`} onClick={() => nav(patientLink(r))} tabIndex={0}
+                onFocus={() => setCursor(i)} onKeyDown={e => e.key === "Enter" && nav(patientLink(r))}
                 aria-label={`${r.name}, open`}>
                 <td>
                   <div className="name">{r.name}</div>
                   <div className="sub">{r.age} {r.sex}{r.problems.length ? `, ${r.problems.slice(0, 2).join(", ")}` : ""}</div>
                 </td>
                 <td className="r">
-                  <div className="glucose-now num">{fmt(r.glucose)}</div>
+                  <div className="glucose-now num">{glu(r.glucose)}</div>
                   <div className="sub">{stale(r) ?? trendWord(r.trend30)}</div>
                 </td>
                 <td className="c-flag"><GlucoseNext r={r} /></td>
-                <td className="c-cv"><Heart r={r} /></td>
+                <td className="c-cv" data-label="Heart risk"><Heart r={r} /></td>
                 <td className="hide-md"><Sparkline values={r.sparkline} /></td>
               </tr>
+              </Fragment>
             ))}
           </tbody>
         )}

@@ -12,10 +12,12 @@ export function ModelCard() {
   const g = m.glucose, cf = m.conformal, al = m.alerts, c = m.cardio;
   const models: [string, string][] = [["cold", "Twin, EHR prior only"], ["phys", "Twin, calibrated (physics only)"], ["ml", "LightGBM only"], ["hyb", "Hybrid"]];
   const lv = m.alert_level.alert_coverage;
+  const fu = mc.followup;
+  const load = fu?.alert_load, stress = fu?.cardio_stress;
   return (
     <article className="doc">
       <div className="label">Model card</div>
-      <h1>Prativimb hybrid patient twin, version 1.1</h1>
+      <h1>Prativimb hybrid patient twin, version 1.4</h1>
       <p className="statement">Decision support only, not a diagnosis. Every forecast and flag needs a clinician's judgement.</p>
 
       <h2>Intended use</h2>
@@ -102,6 +104,37 @@ export function ModelCard() {
       <figure><img src="/figures/alert_tradeoff.png" alt="Spike alert policies" /><figcaption>Alert policies on test patients.</figcaption></figure>
       <figure><img src="/figures/clarke_grid_60min.png" alt="Clarke error grid" style={{ maxWidth: 480 }} /><figcaption>Clarke error grid, 60 minute hybrid forecast.</figcaption></figure>
 
+      {load && (
+        <>
+          <h2>Alert load</h2>
+          <p>How often each alert fires matters as much as how accurate it is: an alert nobody reads helps nobody. Measured with the deployed
+            service code on the 40 test patients, days 8 to 30, every 15 minutes.</p>
+          <table className="data num">
+            <thead><tr><th>Alert</th><th>Per patient per day</th></tr></thead>
+            <tbody>
+              <tr><td>High glucose likely (pushed to the ward)</td><td>{fmt(load.high_per_patient_day, 2)}</td></tr>
+              <tr><td>Glucose may go high (patient page only)</td><td>{fmt(load.watch_per_patient_day, 2)}</td></tr>
+              <tr><td>Low glucose now or likely within the hour</td><td>{fmt(load.low_per_patient_day, 2)}</td></tr>
+              <tr><td>Raised heart risk (new flags per patient per week)</td><td>{fmt(load.heart_flags_per_patient_week, 2)}</td></tr>
+            </tbody>
+          </table>
+          <p>{pct(load.high_came_true, 0)} of {load.high_episodes.toLocaleString("en-IN")} confident high glucose alerts came true (above 180 for
+            15 minutes within 2 h 15 min, counting rises that continue an earlier high; the stricter fresh rise definition above gives {pct(al.alert?.precision ?? 0.852, 0)}).
+            On a ward of 200 such patients the Needs attention list holds a median of {fmt(load.ward_of_200.median)} (90th percentile {fmt(load.ward_of_200.p90)}),
+            most around {String(load.ward_of_200.busiest_hour).padStart(2, "0")}:00 ({fmt(load.ward_of_200.busiest_hour_mean)}) and fewest around
+            {" "}{String(load.ward_of_200.quietest_hour).padStart(2, "0")}:00 ({fmt(load.ward_of_200.quietest_hour_mean)}). Lows are the noisiest alert: most are brief dips just
+            under 70 in people without diabetes.</p>
+          <p className="small muted">What the dashboard does about it: the ward groups patients by urgency, shows why each alert fired, lets a nurse or doctor mark an
+            alert as seen for a set time, keeps possible highs off the ward list and out of notifications, and the digest counts them instead.</p>
+        </>
+      )}
+
+      <h2>A new patient's first week</h2>
+      <p>A new patient's forecast starts from the health record alone (HbA1c, BMI, fasting glucose, age, TCF7L2 genotype, medicines). Across
+        200 patients its typical error over that week is {fmt(m.twin?.rmse_prior_median ?? 28.3, 1)} mg/dL; fitting to the first week of sensor and
+        wearable data brings it to {fmt(m.twin?.rmse_fit_median ?? 19.9, 1)}. Until day 7 the dashboard says the forecast is still learning, possible
+        highs are shown on the patient's page but not pushed to the ward, and lows are flagged as usual. Use the demo strip's "17 Feb, new patients" to see it.</p>
+
       <h2>Cardiovascular risk flag, test patients</h2>
       <table className="data num">
         <thead><tr><th>Detector</th><th>AUROC (95% CI)</th><th>AUPRC (95% CI)</th><th>Sensitivity at 90% specificity</th></tr></thead>
@@ -120,6 +153,27 @@ export function ModelCard() {
         were flagged in the 3 days before, with {pct(c.operating_point.flags_per_patient_day)} of patient days flagged.
       </p>
       <figure><img src="/figures/cardio_performance.png" alt="Cardiovascular model performance" /><figcaption>ROC, precision and recall, and calibration.</figcaption></figure>
+
+      {stress && (
+        <>
+          <h2>How far to trust the heart risk flag</h2>
+          <p className="statement">The heart events and the warning signs before them come from our own simulator, the same one the model learned from.
+            The result above mostly shows that the model learned that simulator. It is not evidence that it predicts real cardiac events.</p>
+          <p>Stress test: the simulated warning signs in the ten days before each test event are weakened toward the patient's own baseline, while
+            illness episodes that look similar keep full strength. Same model, same threshold.</p>
+          <table className="data num">
+            <thead><tr><th>Strength of warning signs</th><th>AUROC</th><th>Events flagged in the 3 days before</th><th>Specificity</th></tr></thead>
+            <tbody>
+              {stress.results.map((x: any) => (
+                <tr key={x.strength}><td>{fmt(x.strength * 100)}%</td><td>{fmt(x.auroc, 2)}</td><td>{x.events_flagged} of {x.events}</td><td>{pct(x.specificity, 1)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="small muted">{stress.windows} test windows, {stress.positives} positive, 6 events: every row is uncertain. Real validation needs real outcomes;
+            open datasets that pair continuous wearable data with adjudicated cardiac events are not available without a data use agreement, which this
+            project does not use. Until then the heart flag demonstrates the pipeline (personal baselines, stacking, explanation, the ward workflow), not a clinical claim.</p>
+        </>
+      )}
 
       {m.real_data && (
         <>
@@ -152,7 +206,10 @@ export function ModelCard() {
       <ul>
         <li>Synthetic only; no personal data under the Digital Personal Data Protection Act 2023 or HIPAA was processed.</li>
         <li>Each synthetic record carries a FHIR Consent resource modelled on a DPDP consent artefact: purpose limited (treatment), time bound and revocable.</li>
-        <li>A real deployment would run inside the hospital network, keep identifiers out of model features, log every access, and integrate with ABDM consent flows.</li>
+        <li>Consent is on screen: the patient (from their own page) or a doctor can withdraw or grant sharing of glucose, wearable data and ABDM health records, and the service stops using a source while it is withdrawn. Every change is in the audit log.</li>
+        <li>Roles: doctors, nurses or health educators, and patients can each do different things, and the service checks the role on every change. The demo signs in without a password; a deployment would use the clinic's single sign on.</li>
+        <li>Device data arrives through Apple Health, Google Fit or Health Connect (Android) adapters, and records through FHIR, the format ABDM health information exchange uses.</li>
+        <li>A real deployment would run inside the hospital network, keep identifiers out of model features and log every access.</li>
       </ul>
     </article>
   );

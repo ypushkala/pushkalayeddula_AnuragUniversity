@@ -725,3 +725,155 @@ a.btn.primary:hover { color: var(--paper); }
   :root:not([data-theme="light"]) .banner.alert { background: var(--paper-2); }
 }
 :root[data-theme="dark"] .banner.alert { background: var(--paper-2); }
+
+/* Version 1.4: follow up, roles, consent, plans ------------------------------------------- */
+
+.anchor { scroll-margin-top: 90px; }
+.notice { border-left: 3px solid var(--accent); background: var(--accent-wash); padding: 10px 14px; font-size: 15.5px; margin: 10px 0; border-radius: 0 4px 4px 0; }
+.notice-inline { color: var(--accent); }
+.big-num { font-size: 28px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.15; }
+
+/* Undo messages */
+.toasts { position: fixed; right: 20px; bottom: 72px; z-index: 60; display: grid; gap: 8px; max-width: min(460px, calc(100vw - 32px)); }
+.toast { display: flex; gap: 14px; align-items: center; padding: 11px 14px; background: var(--ink); color: var(--paper); border-radius: 6px;
+  font-size: 15px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); }
+.toast span { flex: 1; }
+.toast .link-btn { color: var(--paper); font-weight: 600; text-decoration: underline; }
+.toast.error { background: var(--alert); }
+.toast-x { font: inherit; font-size: 13px; background: none; border: 0; color: var(--paper); opacity: 0.75; cursor: pointer; }
+
+/* Tips */
+.hint { display: flex; gap: 10px; align-items: baseline; font-size: 15px; color: var(--ink-2); background: var(--paper-2); padding: 8px 12px;
+  border-radius: 4px; margin: 0 0 12px; }
+.hint span:nth-child(2) { flex: 1; }
+.hint-tag { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+
+/* Patient list: groups, a count and a fade when there is more below */
+.plist-wrap { position: sticky; top: 84px; align-self: start; }
+.plist-wrap .plist { position: static; }
+.plist-wrap.more::after { content: ""; position: absolute; left: 0; right: 14px; bottom: 30px; height: 40px; pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--paper)); }
+.plist-more { display: block; margin: 6px 0 0 10px; font-size: 13.5px; }
+.plist-head { display: flex; justify-content: space-between; align-items: baseline; }
+.plist-count { font-variant-numeric: tabular-nums; letter-spacing: 0; text-transform: none; font-size: 13px; color: var(--ink-2); }
+.plist-group { font-size: 13px; font-weight: 600; color: var(--ink-2); margin: 12px 0 2px 10px; }
+.plist-watch summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--ink-3); margin: 12px 0 2px 10px; }
+
+/* Patient header */
+.crumb-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+.crumb-row .crumbs { margin: 0; }
+.patient-head { display: block; padding-bottom: 12px; }
+.patient-head h1 { margin: 2px 0 0; }
+.banner-actions { max-width: 100%; }
+fieldset.pick { border: 0; padding: 0; margin: 0; display: grid; gap: 6px; }
+fieldset.pick legend { font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px; }
+fieldset.pick label { display: flex; gap: 8px; align-items: center; }
+.b-more a { color: inherit; text-decoration: underline; text-decoration-color: var(--rule-strong); text-underline-offset: 3px; }
+.track { font-size: 15.5px; color: var(--ink-2); margin-top: 12px; }
+.track a { margin-left: 4px; }
+
+/* Earlier alerts and what happened */
+.earlier-summary { display: flex; gap: 40px; flex-wrap: wrap; margin: 4px 0 10px; }
+table.episodes { width: 100%; border-collapse: collapse; font-size: 15px; margin-top: 8px; }
+table.episodes th { text-align: left; font-size: 12.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); font-weight: 500;
+  padding: 6px 10px 6px 0; border-bottom: 1px solid var(--rule); }
+table.episodes td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.res { font-weight: 500; }
+.res.yes { color: var(--ink); }
+.res.no { color: var(--ink-3); }
+.res.wait { color: var(--ink-3); font-style: italic; }
+
+/* Consent */
+ul.consent { list-style: none; padding: 0; margin: 8px 0 0; }
+ul.consent li { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 10px 0; border-top: 1px solid var(--rule); }
+.c-name { font-weight: 500; }
+
+/* Plans */
+.plans { border: 1px solid var(--rule); border-radius: 6px; padding: 12px 16px; margin-bottom: 18px; }
+.plans h3 { margin-bottom: 6px; }
+.plans ul { list-style: none; margin: 0; padding: 0; }
+.plans li { padding: 8px 0; border-top: 1px solid var(--rule); }
+.plans li:first-child { border-top: 0; }
+.plan-top { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.plan-check { font-size: 15.5px; margin-top: 4px; color: var(--ink-2); }
+.plan-check.done { color: var(--ink); }
+.agree { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin: 14px 0 4px; }
+table.week-days td, table.week-days th { text-align: center; }
+table.week-days td:first-child { text-align: left; }
+.check.inline { padding: 0; margin-left: auto; font-size: 14.5px; display: inline-flex; gap: 6px; align-items: center; }
+
+/* Ward groups */
+.ward tr.group-row th { text-align: left; font-family: var(--serif); font-size: 17px; font-weight: 500; text-transform: none; letter-spacing: 0;
+  color: var(--ink); padding: 18px 12px 6px; border-bottom: 1px solid var(--rule-strong); position: static; background: transparent; }
+.why-line { color: var(--ink-3); }
+
+/* Masthead additions */
+.badge { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 6px; border-radius: 999px; background: var(--alert); color: var(--paper);
+  font-size: 12.5px; font-weight: 600; line-height: 20px; text-align: center; font-variant-numeric: tabular-nums; }
+.menu-panel.wide { width: 360px; }
+ul.notif { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+ul.notif a { display: block; padding: 6px 4px; border-radius: 4px; color: var(--ink); font-size: 15px; }
+ul.notif a:hover { background: var(--paper-2); text-decoration: none; }
+.menu-check { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; color: var(--ink-2); }
+.menu-check input { margin-top: 3px; }
+
+/* Sign in */
+.signin { max-width: 620px; margin: 8vh auto 40px; padding: 0 20px; }
+.signin h1 { font-size: 38px; margin-bottom: 4px; }
+fieldset.roles { border: 0; padding: 0; margin: 24px 0 16px; display: grid; gap: 10px; }
+fieldset.roles legend { font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+label.role { display: grid; grid-template-columns: auto 1fr; column-gap: 12px; row-gap: 2px; padding: 12px 14px; border: 1px solid var(--rule-strong);
+  border-radius: 6px; cursor: pointer; }
+label.role input { grid-row: span 2; margin-top: 4px; }
+label.role.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.r-name { font-weight: 500; font-size: 17px; }
+.signin .field { display: grid; gap: 6px; font-size: 15px; color: var(--ink-2); margin-bottom: 16px; }
+.signin .field input, .signin .field select { font: inherit; font-size: 16px; padding: 9px 12px; border: 1px solid var(--rule-strong);
+  border-radius: 4px; background: var(--paper); color: var(--ink); }
+.big-btn { font-size: 17px; padding: 10px 22px; }
+
+/* Handover and digest */
+.handover section, .digest section { margin-top: 22px; }
+.handover h2 .muted, .digest h2 .muted { font-family: var(--sans); font-size: 16px; }
+ul.handover-list { list-style: none; padding: 0; margin: 0; }
+ul.handover-list li { padding: 8px 0; border-top: 1px solid var(--rule); font-size: 16px; }
+table.handover-done { width: 100%; }
+table.handover-done th { text-align: left; font-size: 12.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+.page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.digest-nums { display: flex; gap: 48px; flex-wrap: wrap; margin: 16px 0 6px; }
+
+/* Patient view: logging a meal and data sharing */
+.share-log, .share-data { margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--rule); }
+.share-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.share-form label { display: grid; gap: 4px; font-size: 16px; }
+.share-form select { font: inherit; font-size: 17px; padding: 8px 10px; border: 1px solid var(--rule-strong); border-radius: 4px; background: var(--paper); color: var(--ink); }
+.share-form .btn { font-size: 17px; padding: 9px 20px; }
+
+@media print {
+  .toasts, .hint, .badge { display: none !important; }
+}
+@media (max-width: 1100px) {
+  .plist-wrap { display: none; }
+}
+@media (max-width: 760px) {
+  .toasts { right: 12px; left: 12px; bottom: 100px; max-width: none; }
+  .earlier-summary, .digest-nums { gap: 22px; }
+  table.episodes thead { display: none; }
+  table.episodes tr { display: grid; grid-template-columns: 1fr; padding: 8px 0; border-bottom: 1px solid var(--rule); }
+  table.episodes td { border: 0; padding: 2px 0; }
+  .mast-tools { flex-wrap: wrap; }
+  .menu-panel.wide { width: min(340px, calc(100vw - 32px)); }
+}
+.nav a { white-space: nowrap; }
+.digest table.log td:first-child { white-space: nowrap; width: 45%; }
+.digest section h2 + ul + h2, .digest section h2 + p + h2 { margin-top: 22px; }
+@media (max-width: 760px) {
+  .masthead .brand { flex-wrap: wrap; gap: 6px 18px; }
+  .masthead .nav { width: 100%; overflow-x: auto; scrollbar-width: none; gap: 18px; padding-bottom: 2px; }
+  .mast-tools .gsearch { flex: 1 1 100%; }
+  .mast-tools .gsearch input { width: 100%; }
+}
+@media (max-width: 760px) {
+  table.ward tr.group-row { display: block; }
+  table.ward tr.group-row th { display: block; width: 100%; padding: 16px 4px 6px; }
+}

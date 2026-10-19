@@ -6,17 +6,19 @@ export interface Ack { id: string; pid: string; kind: string; by: string; minute
 export interface EventA {
   glucose: number; trend30: number | null; peak: number; peak_minute: number; tier: Tier;
   low: "now" | "forecast" | null; cross_minute?: number; low_minute?: number; low_value?: number; low_p?: number;
-  ack?: Ack | null; low_ack?: Ack | null; artefact?: boolean;
+  ack?: Ack | null; low_ack?: Ack | null; artefact?: boolean; reason?: string; low_reason?: string; calibrating?: number;
 }
 export interface EventB {
   risk: number | null; flag: boolean; post_event: boolean; day: number; flag_since?: number | null;
-  event_minute?: number; event?: string; ack?: Ack | null;
+  event_minute?: number; event?: string; ack?: Ack | null; reason?: string; paused?: boolean;
 }
 export interface WardRow {
   id: string; name: string; age: number; sex: string; problems: string[]; hba1c: number;
   glucose: number | null; trend30: number | null; sparkline: (number | null)[];
   event_a: EventA | null; event_b: EventB; last_sync: string | null; priority: number; hero: boolean; split: string;
+  group: Group | null; seen: boolean; sharing_paused: string[]; calibrating: number | null;
 }
+export type Group = "low" | "high" | "heart" | "watch";
 export interface Ward { clock: Clock; patients: WardRow[]; alert_level: number; cardio_threshold: number }
 
 export interface Coding { system: string; code: string; display: string }
@@ -31,7 +33,7 @@ export interface PatientDetail {
   familyHistory: string[]; socialHistory: string[]; consent: string;
   twin: { insulin_sensitivity_pct_typical: number; glucose_effectiveness: number; basal_glucose: number;
     absorption_half_time_min: number; secretion_pct_typical: number; calibration_rmse_prior: number; calibration_rmse_fit: number };
-  device: string; context: string[]; split: string;
+  device: string; context: string[]; split: string; abha: string; records_withheld: boolean; calibrating: number | null;
 }
 export interface Agp {
   days: number; coverage: number;
@@ -49,12 +51,30 @@ export interface Timeline {
 export interface Driver { category: string; mgdl: number; twin: number; learned: number; text: string }
 export interface AlertCard { kind: string; tier: string; title: string; detail: string; reason: string; ack?: Ack | null }
 export interface MealEntryRec { id: string; pid: string; minute: number; carbs: number; kind: string; label: string; by: string;
-  entered_minute: number; type: "planned" | "logged"; t: string }
+  entered_minute: number; type: "planned" | "logged"; t: string; source?: string }
+export interface ActionRec { id: string; pid: string; kind: "call" | "review" | "check"; by: string; minute: number; note: string; outcome: string }
+export interface Episode { kind: "spike" | "low"; start: string; end: string; said: string; result: "happened" | "did not happen" | "pending";
+  what_happened: string; done: string[]; steps_after: number; lead_min: number | null }
+export interface History { days: number; episodes: Episode[];
+  summary: { alerts: number; decided: number; happened: number; rate: number | null; median_lead: number | null; missed: number; lows: number; lows_happened: number } }
+export interface PlanCheck { days: number; due: string; complete: boolean; before: { tir: number; mean: number } | null;
+  after: { tir: number; mean: number } | null; adherence: string | null; adherence_how: string; verdict?: string }
+export interface PlanRec { id: string; pid: string; label: string; request: Partial<WhatIfReq>; by: string; minute: number; t: string;
+  predicted: { tir_pct?: number; mean?: number }; seeded: boolean; check: PlanCheck }
+export interface ConsentRow { source: "cgm" | "wearable" | "abdm"; name: string; what: string; granted: boolean; since: string; by: string;
+  purpose: string; valid_until: string }
+export interface HandoverRow { t: string; pid: string; name: string; who: string; what: string; note: string }
+export interface HandoverItem { pid: string; name: string; group: Group; glucose: number | null; reason: string }
+export interface Handover { from: string; to: string; hours: number; done: HandoverRow[]; open: HandoverItem[]; seen_still_active: HandoverItem[] }
+export interface Digest { date: string; patients: number; alerts: number; lows: number; alerts_happened: number; alerts_total: number;
+  alerts_per_patient: number; tir: number; heart_flags: { pid: string; name: string }[];
+  most_alerts: { pid: string; name: string; alerts: number; lows: number }[]; actions: { seen: number; actions: number; meals: number } }
 export interface AuditRow { action: string; wall_time: string; pid: string; by?: string; kind?: string; minute?: number;
   label?: string; carbs?: number; note?: string; until?: number; removed_by?: string }
-export interface Lever { label: string; request: Partial<WhatIfReq>; peak: number; tar_min: number; auc_above_180: number; mean: number; combined: boolean }
+export interface Lever { label: string; request: Partial<WhatIfReq>; peak: number; tar_min: number; auc_above_180: number; mean: number;
+  tir_pct: number; combined: boolean }
 export interface Forecast {
-  available: boolean; reason?: string; origin: string;
+  available: boolean; reason?: string; paused?: boolean; origin: string;
   points: { t: string; mid: number; lo: number; hi: number; lo_alert: number; twin: number }[];
   horizons: { h: number; mid: number; lo: number; hi: number; lo_alert: number }[];
   status: EventA; alert_level: number; interval: number;
@@ -66,7 +86,9 @@ export interface LogEntry { t: string; glucose: number; tier: Tier; low: string 
   low_value: number | null; cross_time: string | null }
 
 export interface WhatIfReq { walk_minutes: number; swap: string; shift_hours: number; missed_dose: boolean;
-  sleep_hours: number | null; night_shift: boolean; scope: "next" | "all"; horizon_h: 6 | 24 }
+  sleep_hours: number | null; night_shift: boolean; scope: "next" | "all"; horizon_h: Horizon;
+  insulin_bolus_units: number; insulin_basal_units: number; metformin_shift_hours: number }
+export type Horizon = 6 | 24 | 168;
 export interface WhatIfSummary { peak: number; peak_time: string; tar_min: number; tbr_min: number; mean: number; tir_pct: number; auc_above_180: number }
 export interface WhatIf {
   available: boolean; origin: string; times: string[]; baseline: number[]; scenario: number[];
@@ -74,6 +96,7 @@ export interface WhatIf {
   delta: { peak: number; tar_min: number; mean: number; auc_above_180: number; tir_pct: number };
   target_meal: { time: string; carbs: number; new_time: string } | null; note: string; solver: string;
   horizon_h: number; scope: string; meals_changed: number;
+  days: { day: number; tir_change: number; mean_change: number; lowest: number }[]; insulin_steps: number[];
 }
 
 export interface CardioView {
@@ -91,47 +114,113 @@ export interface Note {
   S: string[]; O: string[]; A: string[]; P: string[]; disclaimer: string;
 }
 
-async function j<T>(url: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(url, init);
-  if (!r.ok) throw new Error(`${r.status} ${url}`);
+// Who is signed in. The demo has no passwords; the role and name travel in two headers and the API checks
+// what each role may do. A deployment would take both from the clinic's single sign on.
+export type Role = "doctor" | "nurse" | "patient";
+export interface Session { role: Role; name: string; pid?: string }
+export const session: { current: Session | null } = { current: null };
+export const ROLE_NAMES: Record<Role, string> = { doctor: "Doctor", nurse: "Nurse or health educator", patient: "Patient" };
+
+export class ApiError extends Error {
+  constructor(public status: number, message: string) { super(message); }
+}
+
+async function j<T>(url: string, init?: RequestInit, as?: Session): Promise<T> {
+  const who = as ?? session.current;
+  const headers: Record<string, string> = { ...(init?.headers as Record<string, string> ?? {}) };
+  if (who) { headers["X-Prativimb-Role"] = who.role; headers["X-Prativimb-User"] = encodeURIComponent(who.name); }
+  const r = await fetch(url, { ...init, headers });
+  if (!r.ok) {
+    let msg = `${r.status} ${url}`;
+    try { const b = await r.json(); if (b.detail) msg = typeof b.detail === "string" ? b.detail : JSON.stringify(b.detail); } catch { /* not json */ }
+    throw new ApiError(r.status, msg);
+  }
   return r.json() as Promise<T>;
 }
+const post = (body: unknown) => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 export const api = {
   clock: () => j<Clock>("/api/clock"),
-  setClock: (body: Partial<{ minute: number; at: string; speed: number; paused: boolean }>) =>
-    j<Clock>("/api/clock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+  setClock: (body: Partial<{ minute: number; at: string; speed: number; paused: boolean }>) => j<Clock>("/api/clock", post(body)),
   ward: () => j<Ward>("/api/ward"),
   patient: (id: string) => j<PatientDetail>(`/api/patients/${id}`),
   timeline: (id: string, hours = 12) => j<Timeline>(`/api/patients/${id}/timeline?hours=${hours}`),
   forecast: (id: string) => j<Forecast>(`/api/patients/${id}/forecast`),
   agp: (id: string) => j<Agp>(`/api/patients/${id}/agp?days=14`),
   alertLog: (id: string) => j<LogEntry[]>(`/api/patients/${id}/alert-log?hours=6`),
-  whatif: (id: string, req: WhatIfReq) =>
-    j<WhatIf>(`/api/patients/${id}/whatif`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(req) }),
+  whatif: (id: string, req: WhatIfReq) => j<WhatIf>(`/api/patients/${id}/whatif`, post(req)),
   cardio: (id: string, endDay?: number) => j<CardioView>(`/api/patients/${id}/cardio${endDay !== undefined ? `?end_day=${endDay}` : ""}`),
   note: (id: string) => j<Note>(`/api/patients/${id}/note`),
   levers: (id: string, horizon = 6, scope = "next") => j<{ available: boolean; levers: Lever[]; target_meal: WhatIf["target_meal"] }>(
     `/api/patients/${id}/levers?horizon_h=${horizon}&scope=${scope}`),
   mealTypes: () => j<{ kind: string; label: string; speed: number }[]>("/api/meal-types"),
-  addMeal: (id: string, body: { minutes_from_now: number; carbs: number; kind: string; label: string; by: string }) =>
-    j<MealEntryRec>(`/api/patients/${id}/meals`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
-  removeMeal: (id: string, mealId: string, by: string) =>
-    j<{ removed: string }>(`/api/patients/${id}/meals/${mealId}?by=${encodeURIComponent(by)}`, { method: "DELETE" }),
-  ack: (id: string, body: { kind: string; by: string; snooze_minutes: number; note?: string }) =>
-    j<Ack>(`/api/patients/${id}/ack`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+  addMeal: (id: string, body: { minutes_from_now: number; carbs: number; kind: string; label: string }, as?: Session) =>
+    j<MealEntryRec>(`/api/patients/${id}/meals`, post(body), as),
+  removeMeal: (id: string, mealId: string, as?: Session) =>
+    j<{ removed: string }>(`/api/patients/${id}/meals/${mealId}`, { method: "DELETE" }, as),
+  ack: (id: string, body: { kind: string; snooze_minutes: number; note?: string }) => j<Ack>(`/api/patients/${id}/ack`, post(body)),
+  unack: (id: string, ackId: string) => j<{ removed: string }>(`/api/patients/${id}/ack/${ackId}`, { method: "DELETE" }),
+  action: (id: string, body: { kind: "call" | "review" | "check"; note?: string; outcome?: string; alert?: string }) =>
+    j<ActionRec>(`/api/patients/${id}/actions`, post(body)),
+  undoAction: (id: string, actionId: string) => j<{ removed: string }>(`/api/patients/${id}/actions/${actionId}`, { method: "DELETE" }),
+  history: (id: string, days = 7) => j<History>(`/api/patients/${id}/history?days=${days}`),
+  plans: (id: string) => j<PlanRec[]>(`/api/patients/${id}/plans`),
+  addPlan: (id: string, body: { label: string; request: Partial<WhatIfReq>; predicted: { tir_pct?: number; mean?: number } }) =>
+    j<PlanRec>(`/api/patients/${id}/plans`, post(body)),
+  removePlan: (id: string, planId: string) => j<{ removed: string }>(`/api/patients/${id}/plans/${planId}`, { method: "DELETE" }),
+  consent: (id: string) => j<ConsentRow[]>(`/api/patients/${id}/consent`),
+  setConsent: (id: string, body: { source: string; granted: boolean }, as?: Session) =>
+    j<unknown>(`/api/patients/${id}/consent`, post(body), as),
+  handover: (hours = 12) => j<Handover>(`/api/handover?hours=${hours}`),
+  digest: () => j<Digest>("/api/digest"),
   audit: (id?: string) => j<AuditRow[]>(`/api/audit${id ? `?pid=${id}` : ""}`),
-  modelCard: () => j<{ metrics: any; alert_level: number; cardio_threshold: number; figures: string[] }>("/api/model-card"),
+  modelCard: () => j<{ metrics: any; alert_level: number; cardio_threshold: number; figures: string[]; followup: any }>("/api/model-card"),
 };
 
-const IST = "Asia/Kolkata";
+// Display preferences, set from Settings. The service always works in mg/dL and India time.
+export const IST = "Asia/Kolkata";
+export const prefs: { units: "mgdl" | "mmol"; tz: "ist" | "local" } = { units: "mgdl", tz: "ist" };
+const zone = () => (prefs.tz === "ist" ? IST : undefined);
+export const zoneName = () => (prefs.tz === "ist" ? "IST" :
+  new Intl.DateTimeFormat("en-GB", { timeZoneName: "short" }).formatToParts(new Date()).find(p => p.type === "timeZoneName")?.value ?? "local time");
 export const hhmm = (iso: string | number | Date) =>
-  new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: IST, hour12: false });
+  new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: zone(), hour12: false });
 export const dayMonth = (iso: string | Date) =>
-  new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: IST });
+  new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: zone() });
 export const fullTime = (iso: string) =>
   new Date(iso).toLocaleString("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit", timeZone: IST, hour12: false }).replace(",", "");
+    hour: "2-digit", minute: "2-digit", timeZone: zone(), hour12: false }).replace(",", "");
+
+const MMOL = 18.0182;
+export const gluUnit = () => (prefs.units === "mmol" ? "mmol/L" : "mg/dL");
+/** A glucose value in the chosen unit. */
+export const glu = (v: number | null | undefined) =>
+  v === null || v === undefined || !isFinite(v) ? "n/a" : prefs.units === "mmol" ? (v / MMOL).toFixed(1) : v.toFixed(0);
+/** A glucose difference, without sign. */
+export const gluAbs = (v: number) => glu(Math.abs(v));
+export const gluTick = (v: number) => (prefs.units === "mmol" ? (v / MMOL).toFixed(1) : String(v));
+
+/** Rewrites glucose values and clock times inside text that comes from the service (alerts, reasons, notes). */
+export function T(s: string): string {
+  if (!s) return s;
+  let out = s;
+  if (prefs.units === "mmol") {
+    const c = (n: string) => (Number(n) / MMOL).toFixed(1);
+    out = out.replace(/\b(\d{2,3}) (to|and) (\d{2,3})\b(?![:.,]\d|\s*(?:min|g\b|h\b|%|bpm|ms|steps|years|days|nights))/g,
+      (m, x, w, y) => (Number(x) >= 40 && Number(y) >= 40 && Number(x) <= 450 && Number(y) <= 450 ? `${c(x)} ${w} ${c(y)}` : m));
+    out = out.replace(/(\d+(?:\.\d+)?) mg\/dL/g, (_, n) => `${(Number(n) / MMOL).toFixed(1)} mmol/L`)
+      .replace(/\b(peak|highest|lowest|reading|above|below|crossing|exceeding|over|under|to|between|now|minimum)( about)? (\d{2,3})\b(?![:.,]\d|\s*(?:min|g\b|h\b|%|bpm|ms|steps|years|days|nights))/gi,
+        (m, w, a, n) => (Number(n) >= 40 && Number(n) <= 450 ? `${w}${a ?? ""} ${(Number(n) / MMOL).toFixed(1)}` : m));
+  }
+  if (prefs.tz === "local") {
+    const shift = -new Date().getTimezoneOffset() - 330;
+    if (shift) out = out.replace(/\b([01]\d|2[0-3]):([0-5]\d)\b/g, (_, h, m) => {
+      const t = (((Number(h) * 60 + Number(m) + shift) % 1440) + 1440) % 1440;
+      return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+    });
+  }
+  return out;
+}
 export const START = new Date("2026-02-14T00:00:00+05:30");
 export const minuteToDate = (m: number) => new Date(START.getTime() + m * 60000);
 export const dayToDate = (d: number) => new Date(START.getTime() + d * 86400000);

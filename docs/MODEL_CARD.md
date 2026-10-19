@@ -108,17 +108,37 @@ Compression artefact filter against injected dips: 144 of 235 found, 63% of flag
 
 At the operating threshold (6.9% risk): specificity 94.4%, 5 of 6 events flagged in the 3 days before (median lead 3 days), 7.3% of patient days flagged. Brier score 0.020.
 
+**How far to trust this.** The events and the warning signs before them come from the same simulator the model learned from, so these numbers mostly show that the model learned that simulator. Stress test (same model, same threshold), weakening the simulated warning signs in the ten days before each test event toward the patient's own baseline while illness episodes keep full strength:
+
+| Strength of warning signs | AUROC | Events flagged in the 3 days before | Specificity |
+|---|---:|---:|---:|
+| 100% | 0.95 | 5 of 6 | 94.4% |
+| 75% | 0.94 | 5 of 6 | 94.5% |
+| 50% | 0.89 | 4 of 6 | 94.5% |
+| 25% | 0.74 | 1 of 6 | 94.5% |
+
+There is no validation on real cardiac outcomes; open datasets pairing continuous wearable data with adjudicated events need a data use agreement, which this project does not use.
+
+### Alert load
+
+Per patient per day on test patients: 1.33 confident high glucose alerts (94% came true within 2 h 15 min, counting rises that continue an earlier high), 1.89 possible highs (shown on the patient page only), 1.06 low glucose alerts; 0.15 new heart risk flags per patient per week. A 200 patient ward would hold a median of 25 patients on the Needs attention list (90th percentile 41). Details: `reports/followup.md`.
+
+### First week of a new patient
+
+Before day 7 the forecast uses parameters estimated from the health record (median error over that week 28.3 mg/dL, against 19.9 once fitted). The dashboard says so, keeps possible highs off the ward list, and still flags lows.
+
 ## Ethical considerations
 
 * **Privacy.** No personal data was processed. The design assumes DPDP Act 2023 obligations for a real deployment: purpose limited, time bound, revocable consent (modelled as a FHIR `Consent` per patient), data minimisation (no identifiers in features), on premises inference, audit logging, ABDM consent manager integration.
 * **Automation bias.** Alerts carry their reasons and their uncertainty; the alert tier is deliberately conservative; the what-if page says "a conversation aid, not a prescription".
 * **Equity.** The synthetic cohort spans regions, religions and both sexes, but it encodes our assumptions. Real data may reveal subgroup gaps (for example in women, older adults or people with CKD) that synthetic data cannot.
-* **Alarm fatigue.** Two tiers: only the confident tier is pushed to the ward list.
+* **Alarm fatigue.** Two tiers: only the confident tier is pushed to the ward list and to notifications. The ward groups alerts by urgency and shows why each fired; acknowledgements quiet an alert for a chosen time; alert load is measured and reported (above).
+* **Accountability.** Roles (doctor, nurse or health educator, patient) are checked by the service; heart risk alerts and plans need a doctor; every action, undo and consent change is in the audit log.
 
 ## Caveats and limitations
 
 * Synthetic ground truth is still a model; these numbers show the method works end to end, not clinical performance.
-* Only 6 cardiovascular events among test patients; intervals are wide and the supervised model has learned our simulated prodrome.
+* Only 6 cardiovascular events among test patients; intervals are wide and the supervised model has learned our simulated prodrome (see the stress test).
 * On real traces, models trained only on synthetic data perform at about persistence level; local retraining and per site conformal recalibration are prerequisites for deployment. Twin forecasts start from the observer estimate rather than the last reading, which costs accuracy at 30 minutes.
 * Low glucose forecasting has a short median lead and modest sensitivity; most lows here are brief level 1 dips in people without diabetes.
 * Conformal guarantees assume exchangeability; within patient correlation makes coverage approximate, and it is lower below 70 mg/dL.

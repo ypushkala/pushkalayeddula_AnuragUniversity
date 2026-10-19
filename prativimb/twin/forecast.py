@@ -18,7 +18,7 @@ from prativimb.twin import bergman
 from prativimb.twin.series import N, PER_DAY, STEP, Series, day_plan, works_night
 
 W = 72                       # warm up steps (6 h)
-PAD = 2 * PER_DAY            # modifier grids extend past the data for long scenarios
+PAD = 9 * PER_DAY            # modifier grids extend past the data for week long scenarios
 MAIN_MEAL_G = 30.0
 AF = {k: v[1] for k, v in MEAL_TYPES.items()}
 SWAPS = {  # carbohydrate factor, absorption factor for the swapped meal
@@ -92,7 +92,7 @@ def expected_meals(pp: Prepared, k0: int, H: int) -> list[tuple[int, float, floa
     t = k0 * STEP
     out = []
     planned = pp.extra.get("planned", [])
-    for d in (t // 1440 - 1, t // 1440, t // 1440 + 1):
+    for d in range(t // 1440 - 1, (t + H * STEP) // 1440 + 1):
         plan = day_plan(s.declared, int(d)) if 0 <= d < config.N_DAYS else "normal"
         for minute, carbs, kind, name in s.routine.get(plan) or s.routine.get("normal", []):
             if name == "Night snack" and not works_night(s.declared, int(d) - 1):
@@ -127,7 +127,7 @@ def expected_doses(pp: Prepared, k0: int, H: int) -> list[int]:
     t = k0 * STEP
     out = []
     bd = bool(s.ehr.get("t2d", 0))
-    for d in (t // 1440, t // 1440 + 1):
+    for d in range(t // 1440, (t + H * STEP) // 1440 + 1):
         plan = day_plan(s.declared, int(d)) if 0 <= d < config.N_DAYS else "normal"
         for minute, carbs, kind, name in s.routine.get(plan) or s.routine.get("normal", []):
             n = name.lower()
@@ -213,6 +213,9 @@ class Scenario:
     sleep_hours: float | None = None
     night_shift: bool = False
     scope: str = "next"   # "next": the next main meal; "all": every main meal in the horizon
+    insulin_bolus_units: float = 0.0     # rapid acting insulin with each targeted main meal
+    insulin_basal_units: float = 0.0     # long acting insulin per day, assumed at steady state
+    metformin_shift_hours: float = 0.0   # move the evening metformin dose
 
     def is_baseline(self) -> bool:
         return self == Scenario(scope=self.scope)
@@ -230,6 +233,24 @@ def _write_future(u: bergman.Inputs, meals: list[list]) -> None:
     for c, g, a in sorted(meals):
         u.carbs[0, c] += g
         u.af[0, c:] = a
+
+
+# Injected insulin uses population pharmacokinetics (nobody in the synthetic cohort is on insulin):
+# distribution volume 0.12 L/kg; rapid acting appearance follows t/tau^2 exp(-t/tau) with a
+# 55 minute peak; long acting insulin is taken as a flat appearance at steady state.
+INSULIN_VD_ML_PER_KG = 120.0
+BOLUS_TAU = 55.0
+
+
+def insulin_appearance(H: int, bw: float, bolus_steps: list[int], units: float, basal_units: float) -> np.ndarray:
+    """uU/mL per minute for each of H future steps."""
+    vol = INSULIN_VD_ML_PER_KG * bw
+    out = np.full(H, basal_units * 1e6 / vol / 1440.0)
+    t = np.arange(H) * STEP + STEP / 2
+    for b in bolus_steps:
+        tt = t[: H - b]
+        out[b:] += units * 1e6 / vol * tt / BOLUS_TAU ** 2 * np.exp(-tt / BOLUS_TAU)
+    return out
 
 
 def apply_scenario(pp: Prepared, k: int, H: int, sc: Scenario):
@@ -282,6 +303,20 @@ def apply_scenario(pp: Prepared, k: int, H: int, sc: Scenario):
     if sc.missed_dose and s.on_metformin:
         u.dose[0, :] = 0.0
         x0[6] = 0.35
+    if sc.metformin_shift_hours and s.on_metformin:
+        move = int(round(sc.metformin_shift_hours * 60 / STEP))
+        for c in np.flatnonzero(u.dose[0, W:] > 0) + W:
+            hour = (((k + c - W) * STEP) % 1440) / 60
+            if 16 <= hour < 24:
+                d = float(u.dose[0, c])
+                u.dose[0, c] = 0.0
+                u.dose[0, int(np.clip(c + move, W, W + H - 1))] += d
+    if sc.insulin_bolus_units or sc.insulin_basal_units:
+        steps = sorted({m[0] - W for m in targets}) if sc.insulin_bolus_units else []
+        ins = np.zeros_like(u.carbs)
+        ins[0, W:] = insulin_appearance(H, float(s.bw), steps, sc.insulin_bolus_units, sc.insulin_basal_units)
+        u.ins = ins
+        info["insulin_steps"] = steps
     if sc.night_shift and not s.declared.get("night_shift"):
         t = k * STEP
         for j in range(1, H):
@@ -297,12 +332,12 @@ def simulate_scenario(pp: Prepared, theta: np.ndarray, k: int, H: int, sc: Scena
     u, obs, x0, info = apply_scenario(pp, k, H, sc)
     s = pp.s
     p = bergman.params_dict(np.atleast_2d(theta), s.bw, float(s.on_metformin))
-    warm = bergman.Inputs(*(a[:, :W] for a in (u.carbs, u.af, u.A, u.dose, u.smod, u.dawn)))
+    warm = u.window(0, W)
     _, x = bergman.run_rk4(p, x0, warm, obs=obs[:, :W], obs_until=W)
     # The reading at the origin itself corrects G before the horizon starts.
     if not np.isnan(obs[0, W]):
         x[0] += 0.5 * (obs[0, W] - x[0])
-    fut = bergman.Inputs(*(a[:, W:] for a in (u.carbs, u.af, u.A, u.dose, u.smod, u.dawn)))
+    fut = u.window(W)
     if method == "ivp":
         G = bergman.run_ivp(p, x, fut)
     else:

@@ -70,7 +70,8 @@ Hero patients are also exported in device formats and read back through the adap
 
 * Ramesh: Apple Health `export.xml` (`HKQuantityTypeIdentifierHeartRate`, `StepCount`, `BloodGlucose`, `HKCategoryTypeIdentifierSleepAnalysis`).
 * Fatima and Suresh: Google Fit REST style datasets (`com.google.heart_rate.bpm`, `com.google.step_count.delta`, `com.google.blood_glucose` in mmol/L, `com.google.sleep.segment`).
-* Neither platform has a native nightly RMSSD type (Apple exports SDNN). Nightly RMSSD, as rings and bands such as Oura or Fitbit report it, is written under our own namespaced type (`org.prativimb.NightlyRMSSD`, `com.prativimb.hrv.rmssd.nightly`).
+* Android Health Connect: the same streams as Health Connect records (`BloodGlucoseRecord`, `HeartRateRecord` with samples, `StepsRecord`, `SleepSessionRecord` with stages, `HeartRateVariabilityRmssdRecord`), with `write_health_connect` and `read_health_connect` round trip tested; ingest reads a `health_connect.json` when a patient folder has one.
+* Apple Health and Google Fit have no native nightly RMSSD type (Apple exports SDNN); Health Connect does. Nightly RMSSD, as rings and bands such as Oura or Fitbit report it, is written under our own namespaced type (`org.prativimb.NightlyRMSSD`, `com.prativimb.hrv.rmssd.nightly`).
 
 ## Cardiovascular events
 
@@ -107,6 +108,10 @@ Time is stored as minutes since 14 Feb 2026 00:00 IST.
 ## Privacy
 
 There is no personal data in this project, so the Digital Personal Data Protection Act 2023 and HIPAA do not apply to it. We still built the record as a real deployment would need: a FHIR `Consent` resource per patient modelled on a DPDP consent artefact (purpose: treatment; time bound; revocable), no identifiers in any model feature, and an architecture that keeps inference inside the hospital network. See `docs/MODEL_CARD.md`.
+
+Consent is also on screen. Each patient has three sources (continuous glucose monitor, wearable, health records through ABDM), each granted at enrolment. The patient, from their own page, or a doctor can withdraw or grant each one; the change is stored with the replay time and written to the audit log, and while a source is withdrawn the service stops using it (no glucose forecast, no heart risk, or no record sections). Each synthetic patient shows a synthetic 14 digit number in the ABHA layout; it is not a real health ID and ABDM itself is simulated.
+
+Clinician and patient input (acknowledgements, actions, meals, plans, consent changes) lives in `artifacts/clinical_store.json` with an append only `artifacts/audit.jsonl`. Tests use a temporary store. One example plan for Ramesh (a walk after every main meal, agreed on 6 March) is added when the service first starts so the one week check has something to show; it is marked as demo setup.
 
 ## Real data used for validation: CGMacros
 

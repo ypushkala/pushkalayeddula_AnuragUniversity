@@ -1,6 +1,7 @@
 """Everything the API computes, as of the replay clock."""
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 from dataclasses import dataclass, replace
@@ -32,6 +33,59 @@ def iso(minute: float) -> str:
 
 def hhmm(minute: float) -> str:
     return config.minute_to_datetime(minute).strftime("%H:%M")
+
+
+CARDIO_SHORT = {"rhr": "resting heart rate up", "rmssd": "heart rate variability down", "deep_min": "less deep sleep",
+                "rem_min": "less REM sleep", "awake_min": "more time awake", "awakenings": "broken sleep",
+                "efficiency": "poor sleep", "sleep_h": "short sleep", "steps": "fewer steps", "z_composite": "away from usual"}
+GROUPS = ("low", "high", "heart", "watch")
+LEVER_WEEK = {"Walk 15 min after the meal": "Walk 15 min after every main meal",
+              "Walk 30 min after the meal": "Walk 30 min after every main meal",
+              "Millets instead of white rice": "Millets instead of white rice at main meals",
+              "Brown rice instead of white rice": "Brown rice instead of white rice at main meals",
+              "Roti instead of rice": "Roti instead of rice at main meals", "Half the portion": "Half portions at main meals",
+              "Meal 1 h earlier": "Dinner 1 h earlier every day", "Sleep 7.5 h for three nights": "Sleep 7.5 h every night",
+              "Walk 15 min and millets": "Walk 15 min and millets at main meals"}
+
+
+ACTION_NAMES = {"call": "Called the patient", "review": "Booked a review", "check": "Checked the patient now"}
+ALERT_NAMES = {"spike": "high glucose alert", "low": "low glucose alert", "cardio": "heart risk alert"}
+
+
+def short_reason(ex: dict | None) -> str:
+    """Two or three words per driver for the ward list, from the same explanation the patient page shows."""
+    if not ex:
+        return ""
+    out = []
+    for d in sorted(ex["drivers"], key=lambda r: -r["mgdl"]):
+        t = d["text"]
+        if (d["mgdl"] <= 2 or d["category"] in ("trend", "calendar") or t.startswith(("recent walking", "no ", "medication taken"))):
+            continue
+        if t.startswith("expected "):
+            w = t.split(" (")[0].replace("expected ", "")
+        elif t.startswith("recent meal"):
+            w = "recent meal"
+        elif "missed metformin" in t:
+            w = "missed metformin"
+        elif t.startswith("reduced insulin"):
+            w = "low insulin sensitivity"
+        elif t.startswith("little activity"):
+            w = "little activity"
+        elif t.startswith("short sleep"):
+            w = "short sleep" + (", night shift" if "night shift" in t else "")
+        else:
+            w = t.split(" (")[0]
+        if w not in out:
+            out.append(w)
+    # A standing trait does not help tell one patient's alert from another's; name it only if nothing else shows.
+    situational = [w for w in out if w != "low insulin sensitivity"]
+    return ", ".join((situational or out)[:2])
+
+
+def abha_number(pid: str) -> str:
+    """A synthetic 14 digit number in the ABHA layout; not a real health ID."""
+    d = "".join(str(int(c, 16) % 10) for c in hashlib.sha1(pid.encode()).hexdigest())[:12]
+    return f"91-{d[:4]}-{d[4:8]}-{d[8:12]}"
 
 
 def clean(x):
@@ -94,10 +148,23 @@ class AppState:
         low_path = config.ARTIFACT_DIR / "low_model.joblib"
         self.low = joblib.load(low_path) if low_path.exists() else None
         self._asleep: dict[str, np.ndarray] = {}
+        try:
+            self.seed_demo_plan()
+        except Exception as exc:  # a demo convenience must never stop the service
+            print("demo plan not seeded:", exc)
 
     # basics --------------------------------------------------------------------------
-    def theta(self, pid: str) -> np.ndarray:
+    def theta(self, pid: str, minute: float | None = None) -> np.ndarray:
+        """Calibrated parameters, or the EHR prior during the first week (a new patient's twin has no fit yet)."""
+        if minute is not None and self.calibrating(minute):
+            return self.twins.loc[pid, [f"prior_{p}" for p in PARAMS]].to_numpy(float)
         return self.twins.loc[pid, PARAMS].to_numpy(float)
+
+    @staticmethod
+    def calibrating(minute: float) -> int | None:
+        """Day number (1 to 7) while the twin is still in its calibration week, else None."""
+        d = int(minute // 1440)
+        return d + 1 if d < config.CALIBRATION_DAYS else None
 
     def pp(self, pid: str, minute: float | None = None) -> forecast.Prepared:
         """Prepared inputs, including meals entered by a clinician or patient up to the clock time."""
@@ -137,23 +204,41 @@ class AppState:
 
     # forecasting ---------------------------------------------------------------------
     def forecast_rows(self, pids: list[str], minute: float) -> dict[str, Row]:
-        rows, frames = {}, []
+        jobs = []
         for pid in pids:
-            k = self.origin(pid, minute)
-            if k is None or k < forecast.W:
+            if self.store.withdrawn(pid, "cgm", minute):
                 continue
-            pp, th = self.pp(pid, minute), self.theta(pid)
-            G = forecast.forecast(pp, th, np.array([k]), 24)
-            f = glucose_features(pp, np.array([k]), G, th)
-            rows[pid] = Row(pid, k, f, G[0], {}, {}, {}, {}, {})
+            k = self.origin(pid, minute)
+            if k is not None and k >= forecast.W:
+                jobs.append((pid, k, minute))
+        return {r.pid: r for r in self._rows(jobs)}
+
+    def _rows(self, jobs: list[tuple[str, int, float]]) -> list[Row]:
+        """Forecast rows for (patient, origin step, clock minute) jobs, batched per patient."""
+        if not jobs:
+            return []
+        groups: dict[tuple, list[int]] = {}
+        for i, (pid, k, minute) in enumerate(jobs):
+            groups.setdefault((pid, self.calibrating(k * STEP) is not None), []).append(i)
+        rows: list[Row | None] = [None] * len(jobs)
+        frames, order = [], []
+        for (pid, _), idx in groups.items():
+            minute = jobs[idx[0]][2]
+            pp, th = self.pp(pid, minute), self.theta(pid, jobs[idx[0]][1] * STEP)
+            ks = np.array([jobs[i][1] for i in idx])
+            G = forecast.forecast(pp, th, ks, 24)
+            f = glucose_features(pp, ks, G, th)
+            for j, i in enumerate(idx):
+                rows[i] = Row(pid, int(ks[j]), None, G[j], {}, {}, {}, {}, {})
             frames.append(f)
-        if not frames:
-            return rows
+            order += idx
         X = pd.concat(frames, ignore_index=True)
+        for n, i in enumerate(order):
+            rows[i].feats = X.iloc[[n]]
         if self.low is not None:
             lp = self.low["model"].predict_proba(X[self.low["features"]])[:, 1]
-            for i, pid in enumerate(rows):
-                rows[pid].low_p = float(lp[i])
+            for n, i in enumerate(order):
+                rows[i].low_p = float(lp[n])
         b = self.bundle
         for h in config.HORIZONS:
             m = b["models"][h]
@@ -163,11 +248,11 @@ class AppState:
             qhi = tw + m["q_hi"].predict(X[b["features"]])
             lo, hi = conformal.cqr_interval(qlo, qhi, m["cqr_q"])
             la = lower_bound(b, h, qlo, self.alert_cov)
-            for i, pid in enumerate(rows):
-                r = rows[pid]
-                r.hyb[h], r.qlo[h] = float(hyb[i]), float(qlo[i])
-                r.lo90[h], r.hi90[h] = float(min(lo[i], hyb[i])), float(max(hi[i], hyb[i]))
-                r.lo_alert[h] = float(min(la[i], hyb[i]))
+            for n, i in enumerate(order):
+                r = rows[i]
+                r.hyb[h], r.qlo[h] = float(hyb[n]), float(qlo[n])
+                r.lo90[h], r.hi90[h] = float(min(lo[n], hyb[n])), float(max(hi[n], hyb[n]))
+                r.lo_alert[h] = float(min(la[n], hyb[n]))
         return rows
 
     def curve(self, r: Row) -> dict:
@@ -199,6 +284,11 @@ class AppState:
             out["cross_minute"] = (r.k + int(above[0])) * STEP
         elif cg > config.SPIKE_THRESHOLD:
             out["tier"] = "high"
+        cal = self.calibrating(r.k * STEP)
+        if cal:
+            out["calibrating"] = cal
+            if out["tier"] == "alert":
+                out["tier"] = "watch"  # first week: the twin is not fitted yet, so nothing is pushed
         out["low_p"] = r.low_p
         if cg < config.LOW_THRESHOLD:
             out["low"] = "artefact" if self.suspect_compression(r.pid, r.k) else "now"
@@ -236,6 +326,17 @@ class AppState:
             last_sync = int(valid[-1]) * STEP if len(valid) else None
             cv = self.cardio_now(pid, minute)
             st = self.status(rows[pid]) if pid in rows else None
+            if st and st["tier"] == "alert" and not self.calibrating(minute):
+                r = rows[pid]
+                feats = r.feats.iloc[0].to_dict()
+                hs = list(config.HORIZONS)
+                peak_h = hs[int(np.argmin([abs(h - (st["peak_minute"] - r.k * STEP)) for h in hs]))]
+                st["reason"] = short_reason(explain_mod.explain(self.pp(pid, minute), self.theta(pid, minute), r.k,
+                                                                self.bundle, r.feats, feats, peak_h))
+            if st and st["low"] == "forecast":
+                st["low_reason"] = f"{st['low_p'] * 100:.0f}% chance"
+            elif st and st["low"] == "now":
+                st["low_reason"] = f"reading {st['glucose']:.0f}"
             acks = {k: self.store.active_ack(pid, k, minute) for k in ("spike", "low", "cardio")}
             pr = 0
             if st:
@@ -249,15 +350,28 @@ class AppState:
             cv["ack"] = acks["cardio"] if cv["flag"] else None
             if cv["flag"]:
                 pr += 6 if cv["ack"] else 30
+            group = None
+            if st and st["low"] in ("now", "forecast"):
+                group = "low"
+            elif st and st["tier"] == "alert":
+                group = "high"
+            elif cv["flag"]:
+                group = "heart"
+            elif st and st["tier"] == "watch":
+                group = "watch"
+            seen = bool((group == "low" and st["low_ack"]) or (group == "high" and st["ack"]) or (group == "heart" and cv["ack"]))
+            paused = [src for src in ("cgm", "wearable") if self.store.withdrawn(pid, src, minute)]
             pr += cv["risk"] * 20 if cv["risk"] is not None else 0
             out.append(clean({
                 "id": pid, "name": f"{p.given} {p.family}", "age": int(e.age), "sex": "M" if p.sex == "male" else "F",
                 "problems": self.problems(pid), "hba1c": float(e.hba1c), "glucose": st and st["glucose"],
                 "trend30": st and st["trend30"], "sparkline": [None if np.isnan(v) else float(v) for v in spark],
                 "event_a": st, "event_b": cv, "last_sync": last_sync and iso(last_sync), "priority": pr,
+                "group": group, "seen": seen, "sharing_paused": paused, "calibrating": self.calibrating(minute),
                 "hero": pid in config.HERO_IDS.values(), "split": self.split[pid],
             }))
-        out.sort(key=lambda r: -r["priority"])
+        rank = {g: i for i, g in enumerate(GROUPS)}
+        out.sort(key=lambda r: (rank.get(r["group"], 9), r["seen"], -r["priority"]))
         with self.lock:
             self._ward_cache = (step, out)
         return out
@@ -272,6 +386,8 @@ class AppState:
                     "event": ev.description.iloc[0], "day": day}
         if not len(sc):
             return {"risk": None, "flag": False, "post_event": False, "day": day}
+        if self.store.withdrawn(pid, "wearable", minute):
+            return {"risk": None, "flag": False, "post_event": False, "day": day, "paused": True}
         last = sc.sort_values("day").iloc[-1]
         prev = sc[sc.flag].day
         first_flag = None
@@ -281,8 +397,12 @@ class AppState:
             while d - 1 in run.index and run.loc[d - 1]:
                 d -= 1
             first_flag = d
+        reason = ""
+        if last.flag:
+            fs = [f["factor"] for f in json.loads(last.factors) if f["factor"] in CARDIO_SHORT][:2]
+            reason = ", ".join(CARDIO_SHORT[f] for f in fs)
         return {"risk": float(last.risk), "flag": bool(last.flag), "post_event": False, "day": int(last.day),
-                "flag_since": first_flag, "flags_in_window": int(len(prev))}
+                "flag_since": first_flag, "flags_in_window": int(len(prev)), "reason": reason}
 
     def cardio_view(self, pid: str, minute: float, end_day: int | None = None) -> dict:
         today = int(minute // 1440)
@@ -319,7 +439,7 @@ class AppState:
         })
 
     # patient detail ------------------------------------------------------------------
-    def detail(self, pid: str) -> dict:
+    def detail(self, pid: str, minute: float | None = None) -> dict:
         p, e, tw = self.patients.loc[pid], self.ehr.loc[pid], self.twins.loc[pid]
         cond = self.conditions[self.conditions.pid == pid]
         obs = self.obs[self.obs.pid == pid]
@@ -341,7 +461,10 @@ class AppState:
                             "previousDate": prev.date if prev is not None else None})
             return out
         smoke = obs[obs.key == "smoking"].text
-        return {
+        abdm_off = minute is not None and self.store.withdrawn(pid, "abdm", minute)
+        if abdm_off:
+            cond, obs = cond.iloc[0:0], obs.iloc[0:0]
+        out = {
             "patient": {"id": pid, "name": f"{p.given} {p.family}", "gender": p.sex, "birthDate": p.birth_date,
                         "age": int(e.age), "city": p.city, "occupation": p.occupation, "nightShift": bool(p.night_shift)},
             "conditions": [{"code": {"system": "http://hl7.org/fhir/sid/icd-10", "code": c.code, "display": c.display},
@@ -367,7 +490,28 @@ class AppState:
             "device": {"apple_health": "Apple Health", "google_fit": "Google Fit"}.get(p.device, p.device),
             "context": self.context(pid),
             "split": self.split[pid],
+            "abha": abha_number(pid),
+            "records_withheld": bool(abdm_off),
+            "calibrating": self.calibrating(minute) if minute is not None else None,
         }
+        if abdm_off:
+            out["medications"], out["genetics"], out["familyHistory"] = [], [], []
+        return out
+
+    def consent_view(self, pid: str, minute: float) -> list[dict]:
+        p = self.patients.loc[pid]
+        device = {"apple_health": "Apple Health", "google_fit": "Google Fit"}.get(p.device, p.device)
+        names = {"cgm": ("Continuous glucose monitor", "Dexcom G6 readings every 5 minutes"),
+                 "wearable": ("Wearable", f"Heart rate, sleep and steps from {device}"),
+                 "abdm": ("Health records through ABDM (simulated)",
+                          f"Conditions, medicines and lab results linked to ABHA {abha_number(pid)}")}
+        out = []
+        for src, (name, what) in names.items():
+            c = self.store.consent(pid, src, minute)
+            out.append({"source": src, "name": name, "what": what, "granted": c["granted"] if c else True,
+                        "since": iso(c["minute"]) if c else config.START.isoformat(), "by": c["by"] if c else "Enrolment",
+                        "purpose": "Care management by the diabetes clinic", "valid_until": "14 Feb 2027"})
+        return clean(out)
 
     def context(self, pid: str) -> list[str]:
         dec = self.S[pid].declared
@@ -429,9 +573,13 @@ class AppState:
         })
 
     def patient_forecast(self, pid: str, minute: float, explain: bool = True) -> dict:
+        w = self.store.withdrawn(pid, "cgm", minute)
+        if w:
+            return {"available": False, "paused": True, "alerts": [], "entries": [],
+                    "reason": f"Glucose sharing withdrawn by {w['by']} at {hhmm(w['minute'])}. No readings are used until it is granted again."}
         rows = self.forecast_rows([pid], minute)
         if pid not in rows:
-            return {"available": False, "reason": "No CGM reading in the last 30 minutes."}
+            return {"available": False, "reason": "No CGM reading in the last 30 minutes.", "alerts": [], "entries": []}
         r = rows[pid]
         c = self.curve(r)
         st = self.status(r)
@@ -447,7 +595,7 @@ class AppState:
             hs = list(config.HORIZONS)
             peak_h = hs[int(np.argmin([abs(h - (st["peak_minute"] - r.k * STEP)) for h in hs]))]
             feats = r.feats.iloc[0].to_dict()
-            ex = explain_mod.explain(self.pp(pid, minute), self.theta(pid), r.k, self.bundle, r.feats, feats, peak_h)
+            ex = explain_mod.explain(self.pp(pid, minute), self.theta(pid, minute), r.k, self.bundle, r.feats, feats, peak_h)
             out["explanation"] = ex
         out["alerts"] = self.alert_cards(pid, minute, st, out.get("explanation"))
         out["entries"] = [{**e, "t": iso(e["minute"])} for e in self.store.meals_for(pid, minute)]
@@ -456,12 +604,7 @@ class AppState:
     def alert_log(self, pid: str, minute: float, hours: int = 6, every: int = 15) -> list[dict]:
         """What the twin said at earlier times today, so a clinician can see an alert was raised in advance."""
         out = []
-        start = minute - hours * 60
-        for m in np.arange(start - start % every + every, minute + 1, every):
-            rows = self.forecast_rows([pid], float(m))
-            if pid not in rows:
-                continue
-            st = self.status(rows[pid])
+        for m, st in self.statuses(pid, minute, minute - hours * 60, every):
             if st["tier"] in ("alert", "watch") or st["low"]:
                 out.append({"t": iso(m), "glucose": st["glucose"], "tier": st["tier"], "low": st["low"],
                             "peak": st["peak"], "peak_time": hhmm(st["peak_minute"]),
@@ -478,6 +621,12 @@ class AppState:
 
     def _alert_cards(self, pid: str, minute: float, st: dict, ex: dict | None) -> list[dict]:
         cards = []
+        if st.get("calibrating"):
+            cards.append({"kind": "calibrating", "tier": "info", "title": f"First week: day {st['calibrating']} of 7",
+                          "detail": "The glucose forecast is still learning this patient. Until day 7 it uses values "
+                                    "estimated from the health record (HbA1c, BMI, age, medicines), its ranges are wider, "
+                                    "and possible highs are shown as Glucose may go high rather than pushed as alerts.",
+                          "reason": ""})
         sent = ex["sentence"] if ex else ""
         if st["tier"] in ("alert", "watch"):
             cards.append({
@@ -507,6 +656,9 @@ class AppState:
                 "reason": "",
             })
         cv = self.cardio_now(pid, minute)
+        if cv.get("paused"):
+            cards.append({"kind": "paused", "tier": "info", "title": "Wearable sharing withdrawn",
+                          "detail": "Heart risk is not worked out while the patient has withdrawn wearable sharing.", "reason": ""})
         if cv.get("flag"):
             sc = self.cardio_scores[(self.cardio_scores.pid == pid) & (self.cardio_scores.day == cv["day"])]
             f = json.loads(sc.factors.iloc[0]) if len(sc) else []
@@ -530,11 +682,12 @@ class AppState:
         k = self.origin(pid, minute)
         if k is None:
             return {"available": False}
-        pp, th = self.pp(pid, minute), self.theta(pid)
+        pp, th = self.pp(pid, minute), self.theta(pid, minute)
         H = horizon_h * 60 // STEP
         scope = req.get("scope", "next")
-        base, info0 = forecast.simulate_scenario(pp, th, k, H, forecast.Scenario(scope=scope))
-        alt, info = forecast.simulate_scenario(pp, th, k, H, forecast.Scenario(**req))
+        method = "rk4" if horizon_h > 24 else "ivp"  # a week of steps: the fixed step integrator (tests check they agree)
+        base, info0 = forecast.simulate_scenario(pp, th, k, H, forecast.Scenario(scope=scope), method=method)
+        alt, info = forecast.simulate_scenario(pp, th, k, H, forecast.Scenario(**req), method=method)
 
         def summary(g):
             g = np.asarray(g)[1:]
@@ -550,13 +703,25 @@ class AppState:
             target = {"time": hhmm((k + ts) * STEP), "carbs": info0["target_carbs"],
                       "new_time": hhmm((k + info.get("meal_step", ts)) * STEP)}
         note = ("Mechanistic twin only. The learned correction is trained for 2 h forecasts and cancels in the difference.")
+        if req.get("insulin_bolus_units") or req.get("insulin_basal_units"):
+            note += (" Insulin uses population insulin action, not this patient's (nobody in the synthetic cohort is on insulin); "
+                     "check the lowest value before reading anything else.")
         if horizon_h > 6:
-            note += (" Beyond about 6 hours absolute levels drift (the twin runs high for some patients); read the "
-                     "difference between the two curves, not the level.")
+            note += (" Beyond about 6 hours absolute levels drift (the twin runs high for some patients), so the chart shows "
+                     "the change against the usual plan rather than the level.")
+        every = 3 if horizon_h > 24 else 1
+        js = range(0, H + 1, every)
+        days = []
+        if horizon_h > 24:
+            for d in range(horizon_h // 24):
+                gb, ga = np.asarray(base)[1 + d * PER_DAY: 1 + (d + 1) * PER_DAY], np.asarray(alt)[1 + d * PER_DAY: 1 + (d + 1) * PER_DAY]
+                days.append({"day": d + 1, "tir_change": float((np.mean((ga >= 70) & (ga <= 180)) - np.mean((gb >= 70) & (gb <= 180))) * 100),
+                             "mean_change": float(ga.mean() - gb.mean()), "lowest": float(ga.min())})
         return clean({
             "available": True, "origin": iso(k * STEP), "horizon_h": horizon_h, "scope": scope,
-            "solver": "scipy.integrate.solve_ivp (RK45)",
-            "times": [iso((k + j) * STEP) for j in range(H + 1)], "baseline": list(base), "scenario": list(alt),
+            "solver": "fixed step RK4 (a week of steps)" if horizon_h > 24 else "scipy.integrate.solve_ivp (RK45)",
+            "times": [iso((k + j) * STEP) for j in js], "baseline": [base[j] for j in js], "scenario": [alt[j] for j in js],
+            "days": days, "insulin_steps": info.get("insulin_steps", []),
             "baseline_summary": b, "scenario_summary": a,
             "delta": {"peak": a["peak"] - b["peak"], "tar_min": a["tar_min"] - b["tar_min"], "mean": a["mean"] - b["mean"],
                       "auc_above_180": a["auc_above_180"] - b["auc_above_180"], "tir_pct": a["tir_pct"] - b["tir_pct"]},
@@ -578,16 +743,34 @@ class AppState:
 
     def rank_levers(self, pid: str, minute: float, horizon_h: int = 6, scope: str = "next") -> dict:
         """Try every lever on this patient's twin and rank by how much each lowers the peak and time above 180."""
+        key = (pid, int(minute // STEP), horizon_h, scope, self.store.version)
+        cache = self.__dict__.setdefault("_rank_cache", {})
+        if key not in cache:
+            if len(cache) > 64:
+                cache.clear()
+            cache[key] = self._rank_levers(pid, minute, horizon_h, scope)
+        return cache[key]
+
+    def _rank_levers(self, pid: str, minute: float, horizon_h: int, scope: str) -> dict:
         rows = []
+        if horizon_h > 24:
+            scope = "all"
         for label, req in self.LEVERS:
+            if horizon_h > 24:
+                label = LEVER_WEEK.get(label, label)
             r = self.whatif(pid, minute, {**req, "horizon_h": horizon_h, "scope": scope})
             if not r.get("available"):
                 return {"available": False, "levers": []}
             d = r["delta"]
             rows.append({"label": label, "request": req, "peak": d["peak"], "tar_min": d["tar_min"],
-                         "auc_above_180": d["auc_above_180"], "mean": d["mean"],
+                         "auc_above_180": d["auc_above_180"], "mean": d["mean"], "tir_pct": d["tir_pct"],
                          "combined": "and" in label})
-        key = (lambda x: (x["auc_above_180"], x["peak"])) if horizon_h > 6 else (lambda x: (x["peak"], x["tar_min"]))
+        if horizon_h > 24:
+            key = lambda x: (-x["tir_pct"], x["mean"])
+        elif horizon_h > 6:
+            key = lambda x: (x["auc_above_180"], x["peak"])
+        else:
+            key = lambda x: (x["peak"], x["tar_min"])
         rows.sort(key=key)
         return clean({"available": True, "horizon_h": horizon_h, "scope": scope, "levers": rows,
                       "target_meal": r.get("target_meal")})
@@ -659,3 +842,270 @@ class AppState:
             "S": S_, "O": O_, "A": A_, "P": P_,
             "disclaimer": "Decision support only, not a diagnosis. Generated from synthetic data by Prativimb.",
         })
+
+    # history and follow up -----------------------------------------------------------
+    def statuses(self, pid: str, minute: float, start: float, every: int = 15) -> list[tuple[float, dict]]:
+        """Status at each check time in (start, minute], using what was known then (batched)."""
+        start = max(start, forecast.W * STEP)
+        ms = np.arange(start - start % every + every, minute + 1, every)
+        jobs, keep = [], []
+        for m in ms:
+            if self.store.withdrawn(pid, "cgm", float(m)):
+                continue
+            k = self.origin(pid, float(m))
+            if k is not None and k >= forecast.W:
+                jobs.append((pid, k, minute))
+                keep.append(float(m))
+        return [(m, self.status(r)) for m, r in zip(keep, self._rows(jobs))]
+
+    def _onset(self, c: np.ndarray, a: int, b: int, above: bool, n: int) -> int | None:
+        """First step in [a, b) that starts n consecutive readings above 180 (or below 70)."""
+        thr = config.SPIKE_THRESHOLD if above else config.LOW_THRESHOLD
+        for j in range(max(a, 0), min(b, len(c) - n + 1)):
+            w = c[j: j + n]
+            if not np.isnan(w).any() and ((w > thr).all() if above else (w < thr).all()):
+                return j
+        return None
+
+    def history(self, pid: str, minute: float, days: int = 7) -> dict:
+        """Every alert in the last few days, what the forecast said, what happened, and who did what."""
+        key = (pid, int(minute // STEP), days, self.store.version)
+        if getattr(self, "_hist_key", None) == key:
+            return self._hist
+        c = self.S[pid].cgm
+        sts = self.statuses(pid, minute, minute - days * 1440)
+        eps: list[dict] = []
+        cur: dict[str, dict] = {}
+        for m, st in sts:
+            kinds = []
+            if st["tier"] == "alert":
+                kinds.append("spike")
+            if st["low"] in ("now", "forecast"):
+                kinds.append("low")
+            for kind in ("spike", "low"):
+                e = cur.get(kind)
+                if kind in kinds:
+                    if e and m - e["end"] <= 30:
+                        e["end"] = m
+                    else:
+                        e = {"kind": kind, "start": m, "end": m, "said": st}
+                        cur[kind] = e
+                        eps.append(e)
+        out = []
+        lead = None
+        acted = self.store.between(minute - days * 1440 - 60, minute, pid)
+        for e in eps:
+            k0, st = int(e["start"] // STEP), e["said"]
+            if e["kind"] == "spike":
+                horizon = k0 + 27
+                j = self._onset(c, k0, horizon, True, 3)
+                seg = c[k0: k0 + 37]
+                hi = float(np.nanmax(seg)) if np.isfinite(seg).any() else None
+                said = f"Above 180 by {hhmm(st['cross_minute'])}, peak {st['peak']:.0f}"
+                lead = (j - k0) * STEP if j is not None else None
+                if j is not None:
+                    result, what = "happened", f"Went above 180 at {hhmm(j * STEP)}, {lead} min after the alert; highest {hi:.0f}"
+                elif horizon * STEP > minute:
+                    result, what = "pending", "Too early to tell"
+                else:
+                    result, what = "did not happen", f"Stayed at or below 180; highest {hi:.0f}" if hi else "No readings"
+            else:
+                lead = None
+                horizon = k0 + 13
+                j = self._onset(c, k0, horizon, False, 2)
+                seg = c[k0: k0 + 13]
+                lo = float(np.nanmin(seg)) if np.isfinite(seg).any() else None
+                said = "Below 70 now" if st["low"] == "now" else f"Below 70 likely within the hour ({st['low_p'] * 100:.0f}%)"
+                if j is not None:
+                    result, what = "happened", f"Went below 70 at {hhmm(j * STEP)}; lowest {lo:.0f}"
+                elif horizon * STEP > minute:
+                    result, what = "pending", "Too early to tell"
+                else:
+                    result, what = "did not happen", f"Stayed at or above 70; lowest {lo:.0f}" if lo else "No readings"
+            win = lambda r, t="minute": e["start"] - 5 <= r[t] <= e["end"] + 90
+            done = ([f"Seen by {a['by']}" + (f": {a['note']}" if a["note"] else "") for a in acted["acks"] if win(a) and a["kind"] == e["kind"]]
+                    + [f"{ACTION_NAMES.get(a['kind'], a['kind'])} by {a['by']}" + (f": {a['outcome'] or a['note']}" if (a['outcome'] or a['note']) else "")
+                       for a in acted["actions"] if win(a)]
+                    + [f"Meal logged: {m['label']} ({m['carbs']:.0f} g)" for m in acted["meals"] if win(m, "entered_minute")])
+            after = self.S[pid].steps[k0: k0 + 24].sum() * STEP
+            out.append({"kind": e["kind"], "start": iso(e["start"]), "end": iso(e["end"]), "said": said, "result": result,
+                        "what_happened": what, "done": done, "steps_after": float(after), "lead_min": lead})
+        spikes = [o for o in out if o["kind"] == "spike"]
+        decided = [o for o in spikes if o["result"] != "pending"]
+        hits = [o for o in decided if o["result"] == "happened"]
+        leads = [o["lead_min"] for o in hits if o["lead_min"] is not None]
+        # Highs that came with no confident alert in the 2 hours before.
+        k_lo, k_hi = int((minute - days * 1440) // STEP), int(minute // STEP)
+        starts = [int(pd.Timestamp(o["start"]).timestamp()) for o in spikes]
+        missed = 0
+        j = k_lo + 6
+        while j < k_hi - 2:
+            prev = c[j - 6: j]
+            if (not np.isnan(c[j: j + 3]).any() and (c[j: j + 3] > config.SPIKE_THRESHOLD).all()
+                    and not (prev > config.SPIKE_THRESHOLD).any()):
+                t = config.minute_to_datetime(j * STEP).timestamp()
+                if not any(0 <= t - x <= 7200 for x in starts):
+                    missed += 1
+                j += 6
+            j += 1
+        res = clean({
+            "days": days, "episodes": out[::-1],
+            "summary": {"alerts": len(spikes), "decided": len(decided), "happened": len(hits),
+                        "rate": len(hits) / len(decided) if decided else None,
+                        "median_lead": float(np.median(leads)) if leads else None, "missed": missed,
+                        "lows": len([o for o in out if o["kind"] == "low"]),
+                        "lows_happened": len([o for o in out if o["kind"] == "low" and o["result"] == "happened"])},
+        })
+        self._hist_key, self._hist = key, res
+        return res
+
+    # plans ---------------------------------------------------------------------------
+    def tir(self, pid: str, a: float, b: float) -> dict | None:
+        c = self.S[pid].cgm[int(a // STEP): int(b // STEP)]
+        v = c[~np.isnan(c)]
+        if len(v) < 100:
+            return None
+        return {"tir": float(np.mean((v >= 70) & (v <= 180)) * 100), "mean": float(v.mean()),
+                "tar": float(np.mean(v > 180) * 100)}
+
+    def plan_check(self, pid: str, plan: dict, minute: float) -> dict:
+        s = self.S[pid]
+        t0 = plan["minute"]
+        t1 = min(t0 + 7 * 1440, minute)
+        days = (minute - t0) / 1440
+        req = plan["request"]
+        meals = s.meal_log[(s.meal_log.minute > t0) & (s.meal_log.minute <= t1) & (s.meal_log.carbs >= forecast.MAIN_MEAL_G)]
+        before = s.meal_log[(s.meal_log.minute > t0 - 7 * 1440) & (s.meal_log.minute <= t0) & (s.meal_log.carbs >= forecast.MAIN_MEAL_G)]
+        n, kept, how = len(meals), None, ""
+        if req.get("walk_minutes"):
+            walked = [s.steps[int(m // STEP) + 2: int(m // STEP) + 18].sum() * STEP >= 900 for m in meals.minute]
+            kept, how = sum(walked), "walked after"
+        elif req.get("swap") in ("millet", "roti"):
+            kept, how = int((meals.kind == f"{req['swap']}_meal").sum()), "had " + {"millet": "millets", "roti": "roti"}[req["swap"]] + " at"
+        elif req.get("swap") == "half_portion" and len(before):
+            kept, how = int((meals.carbs <= 0.65 * before.carbs.median()).sum()), "ate a smaller portion at"
+        elif req.get("sleep_hours"):
+            nights = s.sleep_hours[int(t0 // 1440): int(t1 // 1440)]
+            nights = nights[~np.isnan(nights)]
+            n, kept, how = len(nights), int((nights >= req["sleep_hours"] - 0.5).sum()), "slept long enough on"
+        adherence = (f"{kept} of {n} " + ("nights" if req.get("sleep_hours") else "main meals")) if kept is not None else None
+        b, a = self.tir(pid, t0 - 7 * 1440, t0), self.tir(pid, t0, t1)
+        out = {"days": round(days, 1), "due": iso(t0 + 7 * 1440), "complete": days >= 7, "before": b, "after": a,
+               "adherence": adherence, "adherence_how": how, "kept": kept, "of": n}
+        if days < 1:
+            out["verdict"] = "Started today. The first check is due in 7 days."
+        elif a and b:
+            dt = a["tir"] - b["tir"]
+            pred = plan["predicted"].get("tir_pct")
+            followed = kept is None or n == 0 or kept / n >= 0.5
+            part = f"Time in range {b['tir']:.0f}% the week before, {a['tir']:.0f}% {'the week after' if days >= 7 else 'so far'}"
+            if not followed:
+                v = f"{part}. The plan was mostly not followed ({how} {adherence}), so this does not test it yet; ask what got in the way."
+            elif pred is not None and dt >= max(pred * 0.5, 2):
+                v = f"{part}. It is working: the forecast expected about {pred:+.0f} points."
+            else:
+                v = f"{part}. No clear benefit yet" + (f" (the forecast expected about {pred:+.0f} points)." if pred is not None else ".")
+            out["verdict"] = v
+        return clean(out)
+
+    def plans(self, pid: str, minute: float) -> list[dict]:
+        rows = [p for p in self.store.plans if p["pid"] == pid and p["minute"] <= minute]
+        return clean([{**p, "t": iso(p["minute"]), "check": self.plan_check(pid, p, minute)}
+                      for p in sorted(rows, key=lambda p: -p["minute"])])
+
+    def seed_demo_plan(self) -> None:
+        """One plan agreed with Ramesh nine days before the demo, so the one week check has something to show."""
+        pid = config.HERO_IDS["ramesh"]
+        if any(p["pid"] == pid and p.get("seeded") for p in self.store.plans):
+            return
+        m = 20 * 1440 + 20 * 60
+        req = {"walk_minutes": 15, "scope": "all"}
+        r = self.whatif(pid, m, {**req, "horizon_h": 168})
+        pred = {"tir_pct": r["delta"]["tir_pct"], "mean": r["delta"]["mean"]} if r.get("available") else {}
+        self.store.add_plan(pid, "Walk 15 min after every main meal", req, "Dr A. Kulkarni (demo setup)", m, pred, seeded=True)
+
+    # handover and digest -------------------------------------------------------------
+    def handover(self, minute: float, hours: int = 12) -> dict:
+        names = {pid: f"{p.given} {p.family}" for pid, p in self.patients.iterrows()}
+        got = self.store.between(minute - hours * 60, minute)
+        rows = []
+        for a in got["acks"]:
+            rows.append({"t": iso(a["minute"]), "pid": a["pid"], "name": names[a["pid"]], "who": a["by"],
+                         "what": f"Marked {ALERT_NAMES.get(a['kind'], a['kind'])} as seen", "note": a["note"]})
+        for a in got["actions"]:
+            rows.append({"t": iso(a["minute"]), "pid": a["pid"], "name": names[a["pid"]], "who": a["by"],
+                         "what": ACTION_NAMES.get(a["kind"], a["kind"]), "note": " ".join(x for x in (a["outcome"], a["note"]) if x)})
+        for m in got["meals"]:
+            rows.append({"t": iso(m["entered_minute"]), "pid": m["pid"], "name": names[m["pid"]], "who": m["by"],
+                         "what": f"{'Planned' if m['type'] == 'planned' else 'Logged'} a meal: {m['label']}, {m['carbs']:.0f} g",
+                         "note": "entered by the patient" if m.get("source") == "patient" else ""})
+        for p in got["plans"]:
+            rows.append({"t": iso(p["minute"]), "pid": p["pid"], "name": names[p["pid"]], "who": p["by"],
+                         "what": f"Agreed a plan: {p['label']}", "note": ""})
+        for c in got["consents"]:
+            rows.append({"t": iso(c["minute"]), "pid": c["pid"], "name": names[c["pid"]], "who": c["by"],
+                         "what": f"{'Granted' if c['granted'] else 'Withdrew'} sharing: {c['source']}", "note": ""})
+        rows.sort(key=lambda r: r["t"])
+        ward = self.ward(minute)
+        open_, seen = [], []
+        for r in ward:
+            if r["group"] in ("low", "high", "heart"):
+                item = {"pid": r["id"], "name": r["name"], "group": r["group"], "glucose": r["glucose"],
+                        "reason": (r["event_a"] or {}).get("reason") if r["group"] == "high" else
+                                  (r["event_b"].get("reason") if r["group"] == "heart" else (r["event_a"] or {}).get("low_reason", ""))}
+                (seen if r["seen"] else open_).append(item)
+        return clean({"from": iso(minute - hours * 60), "to": iso(minute), "hours": hours, "done": rows,
+                      "open": open_, "seen_still_active": seen})
+
+    def digest(self, minute: float) -> dict:
+        """The day before the clock time, for the morning email."""
+        day_end = (minute // 1440) * 1440
+        day_start = day_end - 1440
+        key = (int(day_end), self.store.version)
+        if getattr(self, "_digest_key", None) == key:
+            return self._digest
+        jobs, meta = [], []
+        for pid in self.patients.index:
+            for m in np.arange(day_start + 15, day_end + 1, 15):
+                k = self.origin(pid, float(m))
+                if k is not None and k >= forecast.W:
+                    jobs.append((pid, k, float(m)))
+                    meta.append((pid, float(m)))
+        sts = [self.status(r) for r in self._rows(jobs)]
+        per: dict[str, dict] = {}
+        last: dict[str, float] = {}
+        for (pid, m), st in zip(meta, sts):
+            d = per.setdefault(pid, {"alerts": 0, "lows": 0, "starts": []})
+            if st["tier"] == "alert":
+                if m - last.get(pid, -1e9) > 30:
+                    d["alerts"] += 1
+                    d["starts"].append(m)
+                last[pid] = m
+            if st["low"] in ("now", "forecast"):
+                d["lows"] += 1 if m - d.get("low_last", -1e9) > 30 else 0
+                d["low_last"] = m
+        hits = total = 0
+        for pid, d in per.items():
+            c = self.S[pid].cgm
+            for m in d["starts"]:
+                k0 = int(m // STEP)
+                total += 1
+                hits += self._onset(c, k0, k0 + 27, True, 3) is not None
+        names = {pid: f"{p.given} {p.family}" for pid, p in self.patients.iterrows()}
+        top = sorted(((pid, d) for pid, d in per.items() if d["alerts"] or d["lows"]), key=lambda x: -(x[1]["alerts"] + 2 * x[1]["lows"]))[:8]
+        allc = np.concatenate([self.S[pid].cgm[int(day_start // STEP): int(day_end // STEP)] for pid in self.patients.index])
+        allc = allc[~np.isnan(allc)]
+        flags = [pid for pid in self.patients.index if self.cardio_now(pid, day_end).get("flag")]
+        got = self.store.between(day_start, day_end)
+        res = clean({
+            "date": config.minute_to_datetime(day_start).strftime("%a %d %b %Y"), "patients": len(self.patients),
+            "alerts": sum(d["alerts"] for d in per.values()), "lows": sum(d["lows"] for d in per.values()),
+            "alerts_happened": hits, "alerts_total": total,
+            "alerts_per_patient": sum(d["alerts"] for d in per.values()) / len(self.patients),
+            "tir": float(np.mean((allc >= 70) & (allc <= 180)) * 100),
+            "heart_flags": [{"pid": p, "name": names[p]} for p in flags],
+            "most_alerts": [{"pid": p, "name": names[p], "alerts": d["alerts"], "lows": d["lows"]} for p, d in top],
+            "actions": {"seen": len(got["acks"]), "actions": len(got["actions"]), "meals": len(got["meals"])},
+        })
+        self._digest_key, self._digest = key, res
+        return res

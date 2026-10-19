@@ -39,7 +39,9 @@ def test_device_adapters_round_trip(tmp_path):
     hrv = pd.DataFrame({"minute": [480], "rmssd": [33.5]})
     devices.write_apple(tmp_path / "export.xml", "Test", cgm, hr, sleep, hrv)
     devices.write_google(tmp_path / "gfit", cgm, hr, sleep, hrv)
-    for parsed in (devices.read_apple(tmp_path / "export.xml"), devices.read_google(tmp_path / "gfit")):
+    devices.write_health_connect(tmp_path / "hc.json", cgm, hr, sleep, hrv)
+    for parsed in (devices.read_apple(tmp_path / "export.xml"), devices.read_google(tmp_path / "gfit"),
+                   devices.read_health_connect(tmp_path / "hc.json")):
         got = parsed["cgm"].set_index("minute").glucose.dropna()
         assert np.allclose(got.loc[cgm.minute].to_numpy(), cgm.glucose.to_numpy())
         h = parsed["hr"].set_index("minute")
