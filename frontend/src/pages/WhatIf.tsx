@@ -104,8 +104,8 @@ export function WhatIf() {
     <div className="whatif-simple">
       <div className="wi-head">
         <div>
-          <h2>What would help {first}?</h2>
-          <p className="muted">The twin replays the {day ? "next 24 hours" : "next 6 hours"} with one change at a time.
+          <h2>Try a change for {first}</h2>
+          <p className="muted">The glucose forecast replays the {day ? "next 24 hours" : "next 6 hours"} with one change at a time.
             {!day && res?.target_meal && <> The next main meal is at {res.target_meal.time}, about {fmt(res.target_meal.carbs)} g carbohydrate.</>}</p>
         </div>
         <div className="segmented big" role="radiogroup" aria-label="Time span">
@@ -116,7 +116,7 @@ export function WhatIf() {
 
       {levers ? (
         best.length ? (
-          <ol className="lever-cards" aria-label={`Changes that would help ${first} most`}>
+          <ol className="lever-cards" aria-label={`Changes that would help ${first} most, best first`}>
             {best.map((l, i) => {
               const on = same(l.request, req);
               return (
@@ -151,10 +151,10 @@ export function WhatIf() {
             <PlotFigure spec={spec} ariaLabel="Usual plan against the change" />
           </TableView>
         ) : <SkeletonBlock height={360} label="Simulating" />}
-        {day && <p className="small muted">Beyond about 6 hours the twin's absolute levels drift; compare the two lines rather than reading the level.</p>}
+        {day && <p className="small muted">Beyond about 6 hours the forecast's absolute levels drift; compare the two lines rather than reading the level.</p>}
       </div>
 
-      <Disclosure title="Build your own change" hint="walks, food, timing, sleep, a missed dose">
+      <Disclosure title="Build your own change" hint="walk, food, meal time, sleep, a missed dose, a night shift">
         <div className="controls-grid">
           <div className="control">
             <label htmlFor="walk"><span>Walk after the meal</span><span>{req.walk_minutes ? `${req.walk_minutes} min` : "none"}</span></label>
@@ -181,7 +181,7 @@ export function WhatIf() {
         </div>
       </Disclosure>
 
-      <Disclosure title="All changes, ranked" hint="every option the twin tried">
+      <Disclosure title="All changes, ranked" hint={levers ? `${levers.length} changes tried, best first` : ""}>
         {levers && (
           <table className="compare num levers">
             <thead><tr><th>Change</th><th>Highest glucose</th><th>Time above 180</th>{day && <th>Glucose-hours above 180</th>}</tr></thead>
@@ -198,7 +198,7 @@ export function WhatIf() {
         )}
       </Disclosure>
 
-      <Disclosure title="All numbers for this change">
+      <Disclosure title="All numbers for this change" hint={res && a ? `time in range ${fmt(res.baseline_summary.tir_pct)}% to ${fmt(a.tir_pct)}%` : ""}>
         {b && a && res && (
           <table className="compare num">
             <thead><tr><th /><th>Usual</th><th>With the change</th><th>Difference</th></tr></thead>

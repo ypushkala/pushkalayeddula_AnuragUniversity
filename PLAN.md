@@ -100,3 +100,14 @@ Produces `data/raw/` (FHIR style EHR bundles, device style exports for hero pati
 - [x] What if starts with the best changes as cards; custom controls and full tables are one click away.
 - [x] Masthead reduced to the clock, Play, and Replay and Settings menus; plain language problem names and heart reasons.
 - [x] Accessibility audit still clean in both themes.
+
+## Version 1.3: easier to move around
+
+- [x] Slim list of patients needing attention beside every patient page; Previous and Next (Alt and arrows); ward keeps its scroll position.
+- [x] One alert banner under the name with Mark as seen, Try a change, Log a meal and Share with the patient.
+- [x] Three task tabs: Today, Try a change, Record. Heart risk folded into Today as a one line summary that opens into the week. Clinical note is a printable sheet at /note/:id.
+- [x] Fewer collapsed sections; collapsed ones carry a preview line; the reasons are open by default.
+- [x] Demo controls moved to a separate Demo replay strip at the bottom.
+- [x] Patient search in the top bar (/ or Ctrl K).
+- [x] One vocabulary: glucose forecast, Try a change, heart risk, High glucose likely, Low glucose now, Mark as seen. Old addresses redirect.
+- [x] Accessibility audit clean in both themes; 34 tests pass.

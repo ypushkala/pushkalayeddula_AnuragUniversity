@@ -14,9 +14,9 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parent.parent
 AXE = ROOT / "frontend" / "node_modules" / "axe-core" / "axe.min.js"
 WEB = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8000"
-PAGES = [("/", "table.ward tbody tr.row"), ("/patient/PTV-0001", ".card"), ("/patient/PTV-0001/whatif", ".lever-card"),
+PAGES = [("/", "table.ward tbody tr.row"), ("/patient/PTV-0001", ".b-title"), ("/patient/PTV-0001/try", ".lever-card"),
          ("/patient/PTV-0001/record", ".record"),
-         ("/patient/PTV-0003/cardio", "table.heat"), ("/patient/PTV-0001/note", "article.note"), ("/model", "table.data"),
+         ("/patient/PTV-0003?heart=26", "table.heat"), ("/note/PTV-0001", "article.note"), ("/model", "table.data"),
          ("/share/PTV-0001", ".share h1")]
 
 

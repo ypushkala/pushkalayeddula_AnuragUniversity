@@ -35,7 +35,7 @@ A diabetes and cardiometabolic clinic monitors patients remotely between visits.
 
 * **Event A, glucose spike forecast.** Two hours ahead, flag glucose above 180 mg/dL from CGM, steps, heart rate, sleep, meal logs and the EHR. Two tiers: *watch* (point forecast crosses 180; shown, not pushed) and *alert* (the conformal lower bound crosses 180; pushed to the ward list). Lows are flagged too.
 * **Event B, cardiovascular risk flag.** From a rolling seven day window of resting heart rate, HRV (RMSSD), sleep architecture and activity, conditioned on hypertension, lipids and family history, estimate the risk of an event in the next three days, with a weekly trajectory and the top contributing factors.
-* **What if.** Re-simulate the next six hours under a walk, a food swap, a meal time shift, a missed metformin dose, different sleep or a night shift, and compare peak glucose and time above range.
+* **Try a change.** Re-simulate the next six hours under a walk, a food swap, a meal time shift, a missed metformin dose, different sleep or a night shift, and compare peak glucose and time above range.
 * **Record.** One click SOAP note (printable page and PDF) of the twin's findings.
 * **Low glucose.** A dedicated model for glucose below 70 mg/dL within 60 minutes, with overnight sensor compression artefacts recognised and reported as such instead of as lows.
 * **Working the list.** Clinicians acknowledge and snooze alerts (with an audit trail), tell the twin about a planned or eaten meal so the forecast updates at once, see what changed since they last looked, and share a large type summary with the patient in English, Hindi or Tamil.
@@ -48,15 +48,15 @@ Three fictional demo patients carry the story:
 | Fatima Shaikh, 46, Hyderabad | Prediabetes, observing Ramadan | At 18:00 a low before iftar and a confident rebound alert to about 206 mg/dL after iftar; the low was forecast from 16:00. |
 | Suresh Menon, 61, Kochi | Hypertension, father had an MI at 58 | Falling HRV, rising resting heart rate and lighter sleep raise the cardiovascular flag on 9 March, four days before a simulated event on 13 March. |
 
-| Patient twin | What if |
+| Patient, Today | Try a change |
 |---|---|
-| ![Twin](docs/screenshots/02_twin_ramesh.png) | ![What if](docs/screenshots/03_whatif_ramesh.png) |
-| **Hypoglycaemia to rebound around iftar** | **Cardio week** |
-| ![Fatima](docs/screenshots/04_twin_fatima_iftar.png) | ![Cardio](docs/screenshots/05_cardio_suresh.png) |
+| ![Twin](docs/screenshots/02_twin_ramesh.png) | ![Try a change](docs/screenshots/03_whatif_ramesh.png) |
+| **Low glucose to rebound around iftar** | **Heart risk week** |
+| ![Fatima](docs/screenshots/04_twin_fatima_iftar.png) | ![Heart risk](docs/screenshots/05_cardio_suresh.png) |
 
 More screens (clinical note, model card, patient view, phone layout, dark mode) are in [`docs/screenshots/`](docs/screenshots/).
 
-**Using it.** The ward opens on the patients who need attention; `j` and `k` move, `Enter` opens, `/` searches, and one line says what changed since your last visit. A patient's Overview leads with a single sentence (now, next two hours, likely range), the chart and the alerts; reasons sit under **Why?**, and the meal form, history and two week pattern open on demand. **What if** starts with the changes that help this patient most, as cards. **Health record**, **Heart health** and **Clinical note** are separate tabs. Replay speed, jump times, your name and the theme live in the **Replay** and **Settings** menus. Every chart has a *Show as table* option.
+**Using it.** The ward opens on the patients who need attention, and one line says what changed since your last visit; `j` and `k` move and `Enter` opens. Find any patient from the top bar with `/` or `Ctrl K`. On a patient, a slim list of everyone needing attention stays on the left, **Previous** and **Next** (or `Alt` and the arrow keys) step through it, and the ward keeps its scroll position when you go back. Under the name, one banner gives the most important alert with its actions: **Mark as seen**, **Try a change**, **Log a meal** and **Share with** the patient. Three tabs are named after tasks: **Today** (glucose, the forecast, why it says this, and a one line heart risk summary that opens into the week), **Try a change** (the changes that help this patient most, as cards) and **Record** (two week pattern, history, medicines, labs). **Clinical note** opens a printable sheet. Demo controls (play, speed, jump to 17:30, 18:00, 19:45) sit in a separate strip at the bottom, apart from the clinical screens. Every chart has a *Show as table* option.
 
 ## 5. Technical stack
 
@@ -183,7 +183,7 @@ make a11y          # axe-core accessibility audit of every screen, light and dar
 make realdata      # download CGMacros from PhysioNet, verify its checksum, validate on real traces
 ```
 
-The demo clock starts at Sunday 15 March 2026, 19:45 IST. Use the masthead controls to pause, change speed, or jump (17:30 and 18:00 are useful for Fatima). Set `PRATIVIMB_PAUSED=1` or `PRATIVIMB_SPEED=60` before `make api` to change the default.
+The demo clock starts at Sunday 15 March 2026, 19:45 IST. Use the **Demo replay** strip at the bottom to pause, change speed, or jump (17:30 and 18:00 are useful for Fatima). Set `PRATIVIMB_PAUSED=1` or `PRATIVIMB_SPEED=60` before `make api` to change the default.
 
 ### Repository layout
 

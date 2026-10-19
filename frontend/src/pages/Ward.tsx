@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, dayToDate, dayMonth, fmt, hhmm, minuteToDate, type WardRow } from "../api";
+import { needsAttention } from "../components/PatientList";
 import { SkeletonRows } from "../components/Skeleton";
 import { Sparkline } from "../components/Sparkline";
 import { store, stored, useLive, useLiveData } from "../live";
@@ -16,20 +17,16 @@ export function trendWord(d30: number | null | undefined): string {
   return "steady";
 }
 
-function needsAttention(r: WardRow): boolean {
-  const a = r.event_a;
-  return Boolean((a && (a.tier === "alert" || a.low === "now" || a.low === "forecast")) || r.event_b.flag);
-}
 
 function GlucoseNext({ r }: { r: WardRow }) {
   const a = r.event_a;
   if (!a) return <span className="flag quiet">No recent reading</span>;
   const acked = a.ack ?? a.low_ack;
   let main;
-  if (a.low === "now") main = <span className={`flag ${a.low_ack ? "acked" : "alert"}`}><span className="mark solid" />Low now</span>;
-  else if (a.low === "forecast") main = <span className={`flag ${a.low_ack ? "acked" : "alert"}`}><span className="mark solid" />Low likely within the hour</span>;
-  else if (a.tier === "alert") main = <span className={`flag ${a.ack ? "acked" : "alert"}`}><span className={`mark ${a.ack ? "" : "solid"}`} />High by {hhmm(minuteToDate(a.cross_minute!))}, peak {fmt(a.peak)}</span>;
-  else if (a.tier === "watch") main = <span className="flag watch"><span className="mark" />May go high, peak {fmt(a.peak)}</span>;
+  if (a.low === "now") main = <span className={`flag ${a.low_ack ? "acked" : "alert"}`}><span className="mark solid" />Low glucose now</span>;
+  else if (a.low === "forecast") main = <span className={`flag ${a.low_ack ? "acked" : "alert"}`}><span className="mark solid" />Low glucose likely within the hour</span>;
+  else if (a.tier === "alert") main = <span className={`flag ${a.ack ? "acked" : "alert"}`}><span className={`mark ${a.ack ? "" : "solid"}`} />High glucose likely by {hhmm(minuteToDate(a.cross_minute!))}, peak {fmt(a.peak)}</span>;
+  else if (a.tier === "watch") main = <span className="flag watch"><span className="mark" />Glucose may go high, peak {fmt(a.peak)}</span>;
   else if (a.tier === "high") main = <span className="flag quiet">Above range now</span>;
   else if (a.artefact) main = <span className="flag quiet">Low reading, probably the sensor</span>;
   else main = <span className="flag quiet">In range</span>;
@@ -42,7 +39,7 @@ function Heart({ r }: { r: WardRow }) {
   if (b.risk === null) return <span className="flag quiet">No data</span>;
   if (b.flag) return (
     <div>
-      <span className={`flag ${b.ack ? "acked" : "alert"}`}><span className={`mark ${b.ack ? "" : "solid"}`} />Raised risk</span>
+      <span className={`flag ${b.ack ? "acked" : "alert"}`}><span className={`mark ${b.ack ? "" : "solid"}`} />Raised</span>
       <div className="sub">{fmt(b.risk * 100)}% in 3 days{b.flag_since !== null && b.flag_since !== undefined ? `, since ${dayMonth(dayToDate(b.flag_since))}` : ""}</div>
     </div>
   );
@@ -103,7 +100,6 @@ export function Ward() {
   const [filter, setFilter] = useState<Filter>(() => (stored("prativimb-ward-filter", "attention") as Filter));
   const [q, setQ] = useState("");
   const [cursor, setCursor] = useState(0);
-  const search = useRef<HTMLInputElement>(null);
   const body = useRef<HTMLTableSectionElement>(null);
   const byKeyboard = useRef(false);
   const nav = useNavigate();
@@ -128,8 +124,7 @@ export function Ward() {
         if (e.key === "Escape") (e.target as HTMLElement).blur();
         return;
       }
-      if (e.key === "/") { e.preventDefault(); search.current?.focus(); }
-      else if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); byKeyboard.current = true; setCursor(c => Math.min(c + 1, rows.length - 1)); }
+      if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); byKeyboard.current = true; setCursor(c => Math.min(c + 1, rows.length - 1)); }
       else if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); byKeyboard.current = true; setCursor(c => Math.max(c - 1, 0)); }
     };
     window.addEventListener("keydown", onKey);
@@ -141,6 +136,18 @@ export function Ward() {
     (body.current?.children[cursor] as HTMLElement | undefined)?.focus();
   }, [cursor]);
   useEffect(() => setCursor(0), [filter, q]);
+  useEffect(() => {
+    const save = () => store("prativimb-ward-scroll", String(window.scrollY));
+    window.addEventListener("scroll", save, { passive: true });
+    return () => window.removeEventListener("scroll", save);
+  }, []);
+  const restored = useRef(false);
+  useEffect(() => {
+    if (!data || restored.current) return;
+    restored.current = true;
+    const y = Number(stored("prativimb-ward-scroll", "0"));
+    if (y > 0) window.requestAnimationFrame(() => window.scrollTo(0, y));
+  }, [data]);
 
   if (error) return <p className="empty">Could not reach the twin service ({error}). Is the API running on port 8000?</p>;
   const p = data?.patients ?? [];
@@ -159,8 +166,6 @@ export function Ward() {
           <h1>Ward</h1>
           <div className="meta">{counts.all || 200} patients on remote monitoring{clock && <>, as of {hhmm(clock.now)}</>}</div>
         </div>
-        <input ref={search} type="search" className="search" placeholder="Find a patient" value={q}
-          onChange={e => setQ(e.target.value)} aria-label="Find a patient by name or ID" />
       </div>
       {data && clock && <SinceLastLooked rows={data.patients} now={clock.now} />}
       <div className="segmented big" role="tablist" aria-label="Which patients to show">
@@ -175,8 +180,8 @@ export function Ward() {
           <tr>
             <th scope="col">Patient</th>
             <th scope="col" className="r">Glucose now</th>
-            <th scope="col">Next 2 hours</th>
-            <th scope="col">Heart</th>
+            <th scope="col">Glucose forecast, next 2 hours</th>
+            <th scope="col">Heart risk</th>
             <th scope="col" className="hide-md">Last 24 hours</th>
           </tr>
         </thead>

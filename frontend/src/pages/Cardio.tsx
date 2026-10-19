@@ -1,6 +1,5 @@
 import * as Plot from "@observablehq/plot";
 import { useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
 import { api, dayMonth, dayToDate, fmt, fullTime } from "../api";
 import { Disclosure } from "../components/Disclosure";
 import { PlotFigure, baseStyle } from "../components/PlotFigure";
@@ -9,7 +8,7 @@ import { useLive, useLiveData } from "../live";
 
 const ROWS: { key: string; name: string; unit: string; digits: number; scale?: number }[] = [
   { key: "rhr", name: "Resting heart rate", unit: "bpm", digits: 0 },
-  { key: "rmssd", name: "HRV, RMSSD", unit: "ms", digits: 0 },
+  { key: "rmssd", name: "Heart rate variability", unit: "ms", digits: 0 },
   { key: "sleep_h", name: "Total sleep", unit: "h", digits: 1 },
   { key: "deep_min", name: "Deep sleep", unit: "min", digits: 0 },
   { key: "rem_min", name: "REM sleep", unit: "min", digits: 0 },
@@ -18,11 +17,10 @@ const ROWS: { key: string; name: string; unit: string; digits: number; scale?: n
   { key: "steps", name: "Steps", unit: "", digits: 0 },
 ];
 
-export function Cardio() {
-  const { id = "" } = useParams();
+/** Seven days of wearable data against the patient's usual, with the daily heart risk. Shown inside Today. */
+export function HeartWeek({ id, initialEnd }: { id: string; initialEnd?: number }) {
   const { palette: p, clock } = useLive();
-  const [params] = useSearchParams();
-  const [end, setEnd] = useState<number | undefined>(params.get("end") ? Number(params.get("end")) : undefined);
+  const [end, setEnd] = useState<number | undefined>(initialEnd);
   const { data: v } = useLiveData(() => api.cardio(id, end), [id, end]);
   if (!v) return <p className="empty">Loading wearable week.</p>;
   const lastComplete = clock ? Math.floor(clock.minute / 1440) - 1 : v.end_day;
@@ -81,13 +79,13 @@ export function Cardio() {
 
   // Describe the week on screen, not today: a past week can be flagged even if an event has happened since.
   const status = v.risk === null ? "After the recorded event; risk is not scored for this week."
-    : v.flag ? `Raised risk of a heart event within 3 days (${fmt(v.risk * 100)}%).`
-    : "No sign of raised risk this week.";
+    : v.flag ? `Raised heart risk: ${fmt(v.risk * 100)}% chance of an event within 3 days.`
+    : "Heart risk normal this week.";
   return (
     <>
       <div className="wi-head">
         <div>
-          <h2>Heart health, week ending {dayMonth(dayToDate(v.end_day))}</h2>
+          <h3>Week ending {dayMonth(dayToDate(v.end_day))}</h3>
           <p className={`lead ${v.flag ? "alert-text" : ""}`}>{status}</p>
           {v.event && <p className="alert-text">Event recorded {fullTime(v.event.time)}: {v.event.description}.</p>}
           {v.factors.length > 0 && v.flag && (
@@ -102,7 +100,7 @@ export function Cardio() {
       </div>
       <div className="two">
         <div>
-          <div className="chart-title"><h3>Risk, day by day</h3>
+          <div className="chart-title"><h3>Heart risk, day by day</h3>
             <div className="legend"><span><i style={{ borderColor: p.accent }} />Risk</span><span><i className="dot" style={{ background: p.alert }} />Flagged</span></div>
           </div>
           <TableView title="Daily cardiovascular risk" columns={["Week ending", "Risk of event in 3 days", "Flagged"]}
@@ -116,6 +114,7 @@ export function Cardio() {
             <span>Darker means further from usual, in the worrying direction</span>
             {[0.5, 1.2, 2, 3].map(z => <span key={z} className="sw" style={shade(z)} />)}
           </div>
+          <div className="table-scroll" tabIndex={0} role="region" aria-label="This week against usual, table">
           <table className="heat num">
             <thead>
               <tr><th>Measure</th>{v.dates.map(d => <th key={d}>{dayMonth(d)}</th>)}<th>Usual</th></tr>
@@ -135,6 +134,7 @@ export function Cardio() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
       <Disclosure title="Sleep stages, night by night">

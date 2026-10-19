@@ -20,19 +20,19 @@ WEB = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:5173"
 SHOTS = [
     # name, path, clock, theme, wait selector, optional click text
     ("01_ward", "/", "2026-03-15T19:45:00+05:30", "light", "table.ward tbody tr", None),
-    ("02_twin_ramesh", "/patient/PTV-0001", "2026-03-15T19:45:00+05:30", "light", ".card", None),
-    ("03_whatif_ramesh", "/patient/PTV-0001/whatif", "2026-03-15T19:45:00+05:30", "light", ".lever-card", None),
-    ("04_twin_fatima_iftar", "/patient/PTV-0002", "2026-03-15T18:00:00+05:30", "light", ".card", None),
-    ("05_cardio_suresh", "/patient/PTV-0003/cardio?end=26", "2026-03-15T19:45:00+05:30", "light", "table.heat", None),
-    ("06_note_ramesh", "/patient/PTV-0001/note", "2026-03-15T19:45:00+05:30", "light", "article.note", None),
+    ("02_twin_ramesh", "/patient/PTV-0001", "2026-03-15T19:45:00+05:30", "light", ".b-title", None),
+    ("03_whatif_ramesh", "/patient/PTV-0001/try", "2026-03-15T19:45:00+05:30", "light", ".lever-card", None),
+    ("04_twin_fatima_iftar", "/patient/PTV-0002", "2026-03-15T18:00:00+05:30", "light", ".b-title", None),
+    ("05_cardio_suresh", "/patient/PTV-0003?heart=26", "2026-03-15T19:45:00+05:30", "light", "table.heat", None),
+    ("06_note_ramesh", "/note/PTV-0001", "2026-03-15T19:45:00+05:30", "light", "article.note", None),
     ("07_model_card", "/model", "2026-03-15T19:45:00+05:30", "light", "table.data", None),
     ("08_ward_dark", "/", "2026-03-15T19:45:00+05:30", "dark", "table.ward tbody tr", None),
-    ("09_twin_ramesh_dark", "/patient/PTV-0001", "2026-03-15T19:45:00+05:30", "dark", ".card", None),
-    ("10_whatif_24h_levers", "/patient/PTV-0001/whatif", "2026-03-15T19:45:00+05:30", "light", ".lever-card", "Next 24 hours, every meal"),
+    ("09_twin_ramesh_dark", "/patient/PTV-0001", "2026-03-15T19:45:00+05:30", "dark", ".b-title", None),
+    ("10_whatif_24h_levers", "/patient/PTV-0001/try", "2026-03-15T19:45:00+05:30", "light", ".lever-card", "Next 24 hours, every meal"),
     ("14_health_record", "/patient/PTV-0001/record", "2026-03-15T19:45:00+05:30", "light", ".record", None),
     ("11_patient_view_hindi", "/share/PTV-0001", "2026-03-15T19:45:00+05:30", "light", ".share h1", "lang:hi"),
     ("12_phone_ward", "/", "2026-03-15T19:45:00+05:30", "light", "table.ward tbody tr", "phone"),
-    ("13_phone_twin", "/patient/PTV-0001", "2026-03-15T19:45:00+05:30", "light", ".card", "phone"),
+    ("13_phone_twin", "/patient/PTV-0001", "2026-03-15T19:45:00+05:30", "light", ".b-title", "phone"),
 ]
 
 
@@ -59,6 +59,7 @@ def main(only: list[str] | None = None) -> None:
             page.wait_for_selector(sel, timeout=30000)
             page.wait_for_function("!document.body.innerText.includes('Replaying the last 6 hours')", timeout=60000)
             page.wait_for_function("!document.querySelector('[aria-busy=true]')", timeout=60000)
+            page.wait_for_load_state("networkidle")
             if click and click.startswith("lang:"):
                 page.select_option(".share-tools select", click[5:])
                 page.wait_for_timeout(800)
@@ -67,6 +68,8 @@ def main(only: list[str] | None = None) -> None:
                 page.wait_for_timeout(4000)
             page.wait_for_timeout(1200)
             viewport_only = name.startswith(("01", "03", "08", "12", "13"))
+            if not viewport_only:
+                page.add_style_tag(content=".demobar { position: static; } body { padding-bottom: 0; }")
             page.screenshot(path=str(OUT / f"{name}.png"), full_page=not viewport_only)
             print("saved", name)
             ctx.close()

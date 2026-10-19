@@ -482,8 +482,8 @@ class AppState:
         if st["tier"] in ("alert", "watch"):
             cards.append({
                 "kind": "spike", "tier": st["tier"],
-                "title": ("Glucose above 180 likely within 2 h" if st["tier"] == "alert" else "Possible rise above 180 within 2 h"),
-                "detail": f"Forecast peak {st['peak']:.0f} mg/dL around {hhmm(st['peak_minute'])}; "
+                "title": ("High glucose likely within 2 hours" if st["tier"] == "alert" else "Glucose may go high within 2 hours"),
+                "detail": f"Glucose forecast peak {st['peak']:.0f} mg/dL around {hhmm(st['peak_minute'])}; "
                           f"crossing 180 near {hhmm(st['cross_minute'])}."
                           + (f" At least a {(1 + self.alert_cov) / 2:.0%} chance of exceeding 180." if st["tier"] == "alert" else ""),
                 "reason": sent,
@@ -491,7 +491,7 @@ class AppState:
         if st["low"] in ("now", "forecast"):
             cards.append({
                 "kind": "low", "tier": "alert",
-                "title": "Glucose below 70 now" if st["low"] == "now" else "Glucose below 70 likely within 60 min",
+                "title": "Low glucose now" if st["low"] == "now" else "Low glucose likely within the hour",
                 "detail": (f"Current reading {st['glucose']:.0f} mg/dL." if st["low"] == "now" else
                            f"Low glucose model: {st['low_p'] * 100:.0f}% probability; forecast minimum "
                            f"{st.get('low_value', 0):.0f} mg/dL around {hhmm(st['low_minute'])}."),
@@ -501,7 +501,7 @@ class AppState:
                 cards[-1]["detail"] += f" Rebound to {st['peak']:.0f} mg/dL expected after the next meal."
         if st["low"] == "artefact":
             cards.append({
-                "kind": "artefact", "tier": "info", "title": "Low reading, probably sensor compression",
+                "kind": "artefact", "tier": "info", "title": "Low reading, probably the sensor",
                 "detail": f"{st['glucose']:.0f} mg/dL reached by a fall of more than 1 mg/dL per minute during sleep. "
                           "Pressure on the sensor gives this pattern; check again in 15 minutes or confirm with a fingerstick.",
                 "reason": "",
@@ -512,13 +512,13 @@ class AppState:
             f = json.loads(sc.factors.iloc[0]) if len(sc) else []
             since = cv.get("flag_since")
             cards.append({
-                "kind": "cardio", "tier": "alert", "title": "Cardiovascular risk flag",
-                "detail": f"Seven day wearable pattern; estimated risk {cv['risk'] * 100:.0f}% of an event in 3 days"
+                "kind": "cardio", "tier": "alert", "title": "Raised heart risk",
+                "detail": f"Seven day wearable pattern; estimated {cv['risk'] * 100:.0f}% chance of a heart event within 3 days"
                           + (f", flagged since {(config.START.date() + timedelta(days=since)).strftime('%d %b')}." if since is not None else "."),
                 "reason": "; ".join(x["text"] for x in f[:3]),
             })
         if cv.get("post_event"):
-            cards.append({"kind": "event", "tier": "info", "title": "Cardiovascular event recorded",
+            cards.append({"kind": "event", "tier": "info", "title": "Heart event recorded",
                           "detail": f"{cv['event']}, {config.minute_to_datetime(cv['event_minute']).strftime('%d %b %H:%M')}.",
                           "reason": "Risk scoring paused after an event."})
         return cards
@@ -635,15 +635,15 @@ class AppState:
                       f"(baseline {rh['baseline']:.0f}); nightly RMSSD {np.nanmean([v for v in rm['values'] if v is not None]):.0f} ms "
                       f"(baseline {rm['baseline']:.0f}).")
         A_ = [f"{c['title']}. {c['detail']} {c['reason']}".strip() for c in fc.get("alerts", [])] or \
-             ["No active glucose or cardiovascular alerts from the twin."]
+             ["No active glucose or heart risk alerts."]
         tw = det["twin"]
-        A_.append(f"Twin calibration: insulin sensitivity about {tw['insulin_sensitivity_pct_typical']:.0f}% of a typical adult "
+        A_.append(f"Glucose forecast calibration: insulin sensitivity about {tw['insulin_sensitivity_pct_typical']:.0f}% of a typical adult "
                   f"without diabetes; fit error {tw['calibration_rmse_fit']:.0f} mg/dL over the calibration week.")
         P_ = []
         helpful = [r for r in ranked.get("levers", []) if r["peak"] < -5 and not r["combined"]][:3]
         if helpful:
             meal = ranked.get("target_meal") or {}
-            P_.append("Simulated levers for the next main meal" + (f" ({meal.get('time')})" if meal else "") + ", ranked: "
+            P_.append("Simulated changes for the next main meal" + (f" ({meal.get('time')})" if meal else "") + ", ranked: "
                       + "; ".join(f"{r['label'].lower()}: peak {r['peak']:+.0f} mg/dL, time above 180 {r['tar_min']:+.0f} min"
                                   for r in helpful) + ".")
         early = next((r for r in ranked.get("levers", []) if r["request"] == {"shift_hours": -1.0}), None)
@@ -651,8 +651,8 @@ class AppState:
             P_.append(f"Simulated: eating that meal earlier does not help tonight (peak {early['peak']:+.0f} mg/dL); "
                       "glucose from the previous meal has not settled.")
         if cv.get("flag"):
-            P_.append("Consider clinical review of cardiovascular symptoms, blood pressure and ECG given the wearable risk flag.")
-        P_.append("Review with the patient; the twin's simulations are hypotheses, not prescriptions.")
+            P_.append("Consider clinical review of cardiovascular symptoms, blood pressure and ECG given the raised heart risk.")
+        P_.append("Review with the patient; the simulated changes are hypotheses, not prescriptions.")
         return clean({
             "patient": det["patient"], "generated": iso(minute), "problems": self.problems(pid),
             "medications": [m["dosage"] for m in det["medications"]],

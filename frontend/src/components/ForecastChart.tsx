@@ -7,7 +7,7 @@ import { PlotFigure, baseStyle } from "./PlotFigure";
 const M = { marginLeft: 70, marginRight: 64 };
 const d = (s: string) => new Date(s);
 
-export function ForecastChart({ tl, fc }: { tl: Timeline; fc: Forecast | null }) {
+export function ForecastChart({ tl, fc, stepsPreview }: { tl: Timeline; fc: Forecast | null; stepsPreview?: string }) {
   const { palette: p } = useLive();
   const x0 = d(tl.start);
   const now = d(tl.now);
@@ -94,7 +94,7 @@ export function ForecastChart({ tl, fc }: { tl: Timeline; fc: Forecast | null })
   return (
     <div>
       <div className="chart-title">
-        <h2>Last 12 hours and next 2</h2>
+        <h2>Glucose, last 12 hours and forecast for the next 2</h2>
         <div className="legend">
           <span><i style={{ borderColor: p.ink }} />Measured</span>
           <span><i style={{ borderColor: p.accent }} />Forecast</span>
@@ -115,7 +115,7 @@ export function ForecastChart({ tl, fc }: { tl: Timeline; fc: Forecast | null })
         <span><i className="dot" style={{ border: `1.6px solid ${p.accent}` }} />Planned meal</span>
       </div>
       <details className="disclosure inline">
-        <summary><span className="d-title">Steps and heart rate</span></summary>
+        <summary><span className="d-title">Steps and heart rate</span>{stepsPreview && <span className="d-hint">{stepsPreview}</span>}</summary>
         <div className="d-body">
           <div className="label">Steps per 5 minutes</div>
           <PlotFigure spec={steps} ariaLabel="Steps" />

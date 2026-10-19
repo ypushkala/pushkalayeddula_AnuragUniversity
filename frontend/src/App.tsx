@@ -1,53 +1,20 @@
-import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
-import { api, dayMonth, hhmm } from "./api";
+import { BrowserRouter, Navigate, NavLink, Route, Routes, useParams, useSearchParams } from "react-router-dom";
+import { DemoBar } from "./components/DemoBar";
 import { Menu } from "./components/Disclosure";
+import { GlobalSearch } from "./components/GlobalSearch";
 import { LiveProvider, useLive } from "./live";
-import { Cardio } from "./pages/Cardio";
 import { ModelCard } from "./pages/ModelCard";
 import { Note } from "./pages/Note";
-import { Overview, Patient, Record } from "./pages/Patient";
+import { Patient, Record, Today } from "./pages/Patient";
 import { Share } from "./pages/Share";
 import { Ward } from "./pages/Ward";
 import { WhatIf } from "./pages/WhatIf";
-
-const JUMPS: [string, string][] = [
-  ["17:30, before iftar", "2026-03-15T17:30:00+05:30"],
-  ["18:00, iftar approaching", "2026-03-15T18:00:00+05:30"],
-  ["19:45, demo start", "2026-03-15T19:45:00+05:30"],
-];
-
-/** The time and a play button stay visible; speed and jumps live in a small menu. */
-function ClockControl() {
-  const { clock, connected, refreshClock } = useLive();
-  if (!clock) return <div className="clock muted">Connecting</div>;
-  const set = (body: Parameters<typeof api.setClock>[0]) => api.setClock(body).then(refreshClock);
-  return (
-    <div className="clock">
-      <span title={connected ? "Live replay connected" : "Replay disconnected"} className={`dot-live ${connected && !clock.paused ? "" : "off"}`} />
-      <span className="clock-time">{dayMonth(clock.now)}, {hhmm(clock.now)}</span>
-      <button className="btn" onClick={() => set({ paused: !clock.paused })} aria-label={clock.paused ? "Play replay" : "Pause replay"}>
-        {clock.paused ? "Play" : "Pause"}
-      </button>
-      <Menu label="Replay">
-        <div className="menu-label">Speed</div>
-        <div className="menu-row">
-          {[1, 10, 60, 300].map(s => (
-            <button key={s} className={`btn ${clock.speed === s ? "primary" : ""}`} onClick={() => set({ speed: s })}>{s}x</button>
-          ))}
-        </div>
-        <div className="menu-label">Jump to 15 March</div>
-        {JUMPS.map(([l, v]) => <button key={v} className="menu-item" onClick={() => set({ at: v })}>{l}</button>)}
-        <p className="menu-note">The demo replays synthetic data as if it were arriving now.</p>
-      </Menu>
-    </div>
-  );
-}
 
 function Settings() {
   const { clinician, setClinician, theme, setTheme } = useLive();
   return (
     <Menu label="Settings">
-      <label className="menu-field">Your name, for acknowledgements
+      <label className="menu-field">Your name, used when you mark alerts as seen
         <input type="text" value={clinician} maxLength={40} onChange={e => setClinician(e.target.value)} />
       </label>
       <div className="menu-label">Appearance</div>
@@ -55,10 +22,19 @@ function Settings() {
         <button className={`btn ${theme === "light" ? "primary" : ""}`} onClick={() => setTheme("light")}>Light</button>
         <button className={`btn ${theme === "dark" ? "primary" : ""}`} onClick={() => setTheme("dark")}>Dark</button>
       </div>
-      <div className="menu-label">Keyboard, on the ward list</div>
-      <p className="menu-note">j and k move between patients, Enter opens one, / jumps to search.</p>
+      <div className="menu-label">Keyboard</div>
+      <p className="menu-note">/ or Ctrl and K: find a patient. On the ward, j and k move and Enter opens. On a patient, Alt and the arrow keys go to the previous or next patient needing attention.</p>
     </Menu>
   );
+}
+
+// Old addresses keep working.
+function ToTry() { const { id } = useParams(); return <Navigate to={`/patient/${id}/try`} replace />; }
+function ToNote() { const { id } = useParams(); return <Navigate to={`/note/${id}`} replace />; }
+function ToHeart() {
+  const { id } = useParams();
+  const [q] = useSearchParams();
+  return <Navigate to={`/patient/${id}?heart=${q.get("end") ?? ""}`} replace />;
 }
 
 function Shell() {
@@ -74,7 +50,7 @@ function Shell() {
           </nav>
         </div>
         <div className="mast-tools">
-          <ClockControl />
+          <GlobalSearch />
           <Settings />
         </div>
       </header>
@@ -83,18 +59,20 @@ function Shell() {
           <Route path="/" element={<Ward />} />
           <Route path="/model" element={<ModelCard />} />
           <Route path="/patient/:id" element={<Patient />}>
-            <Route index element={<Overview />} />
-            <Route path="whatif" element={<WhatIf />} />
-            <Route path="cardio" element={<Cardio />} />
+            <Route index element={<Today />} />
+            <Route path="try" element={<WhatIf />} />
             <Route path="record" element={<Record />} />
-            <Route path="note" element={<Note />} />
+            <Route path="whatif" element={<ToTry />} />
+            <Route path="cardio" element={<ToHeart />} />
+            <Route path="note" element={<ToNote />} />
           </Route>
         </Routes>
       </main>
       <footer className="footer">
         <span>Synthetic data only. Decision support, not a diagnosis.</span>
-        <span>Prativimb 1.2, MIT licence</span>
+        <span>Prativimb 1.3, MIT licence</span>
       </footer>
+      <DemoBar />
     </>
   );
 }
@@ -105,6 +83,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/share/:id" element={<Share />} />
+          <Route path="/note/:id" element={<Note />} />
           <Route path="*" element={<Shell />} />
         </Routes>
       </BrowserRouter>
