@@ -98,7 +98,9 @@ def train(df: pd.DataFrame | None = None, verbose: bool = True) -> dict:
         q = conformal.conformal_quantile(conformal.cqr_scores(lo_c, hi_c, resid[c].to_numpy()), config.CONFORMAL_ALPHA)
         # Plain split conformal on the hybrid point forecast, kept for comparison in the report.
         q_abs = conformal.conformal_quantile(np.abs(resid[c].to_numpy() - hyb.predict(Xc)), config.CONFORMAL_ALPHA)
-        bundle["models"][h] = {"ml": ml, "hybrid": hyb, "q_lo": qlo, "q_hi": qhi, "cqr_q": q, "abs_q": q_abs}
+        scores = conformal.cqr_scores(lo_c, hi_c, resid[c].to_numpy())
+        bundle["models"][h] = {"ml": ml, "hybrid": hyb, "q_lo": qlo, "q_hi": qhi, "cqr_q": q, "abs_q": q_abs,
+                               "cal_scores": np.sort(scores).astype(np.float32)}
         if verbose:
             print(f"  h={h:>3} min: trees ml {ml.best_iteration_}, hybrid {hyb.best_iteration_}; "
                   f"CQR margin {q:.1f} mg/dL ({time.time() - t0:.0f}s)")
@@ -116,10 +118,19 @@ def predict(bundle: dict, df: pd.DataFrame) -> pd.DataFrame:
         out[f"phys{h}"] = tw
         out[f"ml{h}"] = m["ml"].predict(Xm)
         out[f"hyb{h}"] = tw + m["hybrid"].predict(X)
-        lo, hi = conformal.cqr_interval(tw + m["q_lo"].predict(X), tw + m["q_hi"].predict(X), m["cqr_q"])
+        out[f"qlo{h}"] = tw + m["q_lo"].predict(X)
+        out[f"qhi{h}"] = tw + m["q_hi"].predict(X)
+        lo, hi = conformal.cqr_interval(out[f"qlo{h}"], out[f"qhi{h}"], m["cqr_q"])
         out[f"lo{h}"] = np.minimum(lo, out[f"hyb{h}"])
         out[f"hi{h}"] = np.maximum(hi, out[f"hyb{h}"])
     return out
+
+
+def lower_bound(bundle: dict, h: int, qlo: np.ndarray, coverage: float) -> np.ndarray:
+    """CQR lower bound for any central coverage level, from the stored calibration scores.
+    The margin can be negative: a 50% interval sits inside the raw 5% to 95% quantile band."""
+    q = conformal.conformal_quantile(bundle["models"][h]["cal_scores"], 1 - coverage)
+    return qlo - q
 
 
 def run(verbose: bool = True) -> None:
@@ -127,10 +138,14 @@ def run(verbose: bool = True) -> None:
     bundle = train(df, verbose)
     test = df[df.split.isin(["test", "calibration"])].copy()
     preds = predict(bundle, test)
-    out = pd.concat([test[["pid", "k", "split", "cgm"] + [f"y{h}" for h in config.HORIZONS]
+    out = pd.concat([test[["pid", "k", "split", "cgm", "tw_now"] + [f"y{h}" for h in config.HORIZONS]
                           + [f"cold{h}" for h in config.HORIZONS]], preds], axis=1)
     out.to_parquet(config.ARTIFACT_DIR / "glucose_predictions.parquet", index=False)
+    from prativimb.eval.alerts import choose_alert_level
+    S = series.load_all(pids=sorted(out.pid.unique()))
+    level = choose_alert_level(out, bundle, {pid: s.cgm for pid, s in S.items()})
     if verbose:
+        print(f"  alert level: lower bound of the {level['alert_coverage']:.0%} interval (chosen on calibration patients)")
         t = out[out.split == "test"]
         for h in config.REPORT_HORIZONS:
             ok = t[f"y{h}"].notna()

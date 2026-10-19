@@ -19,6 +19,8 @@ def conformal_quantile(scores: np.ndarray, alpha: float) -> float:
     scores = np.sort(np.asarray(scores, float))
     n = len(scores)
     k = int(np.ceil((n + 1) * (1 - alpha)))
+    if k < 1:
+        return float("-inf")
     if k > n:
         return float("inf")
     return float(scores[k - 1])

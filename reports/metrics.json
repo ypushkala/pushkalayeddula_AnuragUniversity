@@ -1,0 +1,576 @@
+{
+ "generated": "19 Oct 2026",
+ "split": {
+  "train_patients": 120,
+  "calibration_patients": 40,
+  "test_patients": 40
+ },
+ "glucose": {
+  "30": {
+   "cold": {
+    "rmse": 25.782786468312256,
+    "mard": 12.330378572478866
+   },
+   "phys": {
+    "rmse": 16.70483246054669,
+    "mard": 9.319742119481477
+   },
+   "ml": {
+    "rmse": 13.692054701148422,
+    "mard": 7.594553755606759
+   },
+   "hyb": {
+    "rmse": 12.87038491849722,
+    "mard": 7.379902994919331
+   },
+   "n": 128048,
+   "clarke": {
+    "A": 94.2341934274647,
+    "B": 4.396788704235911,
+    "C": 0.0,
+    "D": 1.3690178682993877,
+    "E": 0.0
+   }
+  },
+  "60": {
+   "cold": {
+    "rmse": 33.40772030374092,
+    "mard": 16.06824158434835
+   },
+   "phys": {
+    "rmse": 24.780391240515222,
+    "mard": 13.431057473390029
+   },
+   "ml": {
+    "rmse": 21.63897339108776,
+    "mard": 11.499854824100513
+   },
+   "hyb": {
+    "rmse": 20.17598077609768,
+    "mard": 11.093542340581989
+   },
+   "n": 127096,
+   "clarke": {
+    "A": 85.45902310064832,
+    "B": 12.041291622080946,
+    "C": 0.0007868068231887706,
+    "D": 2.498111663624347,
+    "E": 0.0007868068231887706
+   }
+  },
+  "90": {
+   "cold": {
+    "rmse": 35.1830156093259,
+    "mard": 16.981187146842
+   },
+   "phys": {
+    "rmse": 28.012414509943326,
+    "mard": 15.450874418837483
+   },
+   "ml": {
+    "rmse": 25.78159429192988,
+    "mard": 13.674616559878386
+   },
+   "hyb": {
+    "rmse": 23.775431779271997,
+    "mard": 12.990034270091117
+   },
+   "n": 126776,
+   "clarke": {
+    "A": 80.94197639931848,
+    "B": 16.208903893481416,
+    "C": 0.026818956269325425,
+    "D": 2.8199343724364234,
+    "E": 0.0023663784943522433
+   }
+  },
+  "120": {
+   "cold": {
+    "rmse": 35.21051612119918,
+    "mard": 17.00658038652489
+   },
+   "phys": {
+    "rmse": 29.018548750742628,
+    "mard": 16.35540096107898
+   },
+   "ml": {
+    "rmse": 27.616724979333647,
+    "mard": 14.642560123793166
+   },
+   "hyb": {
+    "rmse": 25.2283097511241,
+    "mard": 13.66644141332217
+   },
+   "n": 126623,
+   "clarke": {
+    "A": 79.33155903745765,
+    "B": 17.65082173064925,
+    "C": 0.052123231956279666,
+    "D": 2.963916508059357,
+    "E": 0.00157949187746302
+   }
+  }
+ },
+ "alerts": {
+  "alert": {
+   "events": 1599,
+   "detected": 1073,
+   "sensitivity": 0.6710444027517198,
+   "alert_episodes": 1264,
+   "precision": 0.8528481012658228,
+   "median_lead_min": 30.0,
+   "false_alarms_per_patient_day": 0.20223497432799767,
+   "patient_days": 919.7222222222218
+  },
+  "lower90": {
+   "events": 1599,
+   "detected": 699,
+   "sensitivity": 0.4371482176360225,
+   "alert_episodes": 798,
+   "precision": 0.8884711779448622,
+   "median_lead_min": 25.0,
+   "false_alarms_per_patient_day": 0.09676834793113867,
+   "patient_days": 919.7222222222218
+  },
+  "hyb": {
+   "events": 1599,
+   "detected": 1444,
+   "sensitivity": 0.9030644152595372,
+   "alert_episodes": 1994,
+   "precision": 0.697592778335005,
+   "median_lead_min": 77.5,
+   "false_alarms_per_patient_day": 0.6556327393536698,
+   "patient_days": 919.7222222222218
+  },
+  "ml": {
+   "events": 1599,
+   "detected": 1429,
+   "sensitivity": 0.8936835522201376,
+   "alert_episodes": 1996,
+   "precision": 0.6863727454909819,
+   "median_lead_min": 70.0,
+   "false_alarms_per_patient_day": 0.6806402899426158,
+   "patient_days": 919.7222222222218
+  },
+  "phys": {
+   "events": 1599,
+   "detected": 1394,
+   "sensitivity": 0.8717948717948718,
+   "alert_episodes": 2005,
+   "precision": 0.5685785536159601,
+   "median_lead_min": 105.0,
+   "false_alarms_per_patient_day": 0.9405013591060106,
+   "patient_days": 919.7222222222218
+  }
+ },
+ "alert_level": {
+  "alert_coverage": 0.5,
+  "fa_budget": 0.1,
+  "chosen_on": "calibration patients",
+  "calibration_scan": [
+   {
+    "coverage": 0.2,
+    "events": 1458,
+    "detected": 1069,
+    "sensitivity": 0.733196159122085,
+    "alert_episodes": 1250,
+    "precision": 0.884,
+    "median_lead_min": 30.0,
+    "false_alarms_per_patient_day": 0.15766224940536874,
+    "patient_days": 919.6874999999995
+   },
+   {
+    "coverage": 0.3,
+    "events": 1458,
+    "detected": 1019,
+    "sensitivity": 0.6989026063100137,
+    "alert_episodes": 1168,
+    "precision": 0.8904109589041096,
+    "median_lead_min": 30.0,
+    "false_alarms_per_patient_day": 0.13917770981991173,
+    "patient_days": 919.6874999999995
+   },
+   {
+    "coverage": 0.4,
+    "events": 1458,
+    "detected": 967,
+    "sensitivity": 0.6632373113854595,
+    "alert_episodes": 1093,
+    "precision": 0.898444647758463,
+    "median_lead_min": 25.0,
+    "false_alarms_per_patient_day": 0.1206931702344547,
+    "patient_days": 919.6874999999995
+   },
+   {
+    "coverage": 0.5,
+    "events": 1458,
+    "detected": 923,
+    "sensitivity": 0.6330589849108368,
+    "alert_episodes": 1031,
+    "precision": 0.9146459747817652,
+    "median_lead_min": 25.0,
+    "false_alarms_per_patient_day": 0.09568467550118931,
+    "patient_days": 919.6874999999995
+   },
+   {
+    "coverage": 0.6,
+    "events": 1458,
+    "detected": 868,
+    "sensitivity": 0.5953360768175583,
+    "alert_episodes": 961,
+    "precision": 0.9250780437044746,
+    "median_lead_min": 25.0,
+    "false_alarms_per_patient_day": 0.07828746177370034,
+    "patient_days": 919.6874999999995
+   },
+   {
+    "coverage": 0.7,
+    "events": 1458,
+    "detected": 803,
+    "sensitivity": 0.5507544581618655,
+    "alert_episodes": 869,
+    "precision": 0.9344073647871116,
+    "median_lead_min": 25.0,
+    "false_alarms_per_patient_day": 0.06197757390417944,
+    "patient_days": 919.6874999999995
+   },
+   {
+    "coverage": 0.8,
+    "events": 1458,
+    "detected": 728,
+    "sensitivity": 0.4993141289437586,
+    "alert_episodes": 785,
+    "precision": 0.9414012738853503,
+    "median_lead_min": 25.0,
+    "false_alarms_per_patient_day": 0.05001698946653078,
+    "patient_days": 919.6874999999995
+   },
+   {
+    "coverage": 0.9,
+    "events": 1458,
+    "detected": 606,
+    "sensitivity": 0.4156378600823045,
+    "alert_episodes": 658,
+    "precision": 0.9513677811550152,
+    "median_lead_min": 20.0,
+    "false_alarms_per_patient_day": 0.03479442745497793,
+    "patient_days": 919.6874999999995
+   }
+  ]
+ },
+ "alert_curve": [
+  {
+   "coverage": 0.2,
+   "events": 1599,
+   "detected": 1240,
+   "sensitivity": 0.7754846779237023,
+   "alert_episodes": 1565,
+   "precision": 0.7980830670926518,
+   "median_lead_min": 35.0,
+   "false_alarms_per_patient_day": 0.343581999395953,
+   "patient_days": 919.7222222222218
+  },
+  {
+   "coverage": 0.3,
+   "events": 1599,
+   "detected": 1181,
+   "sensitivity": 0.7385866166353972,
+   "alert_episodes": 1446,
+   "precision": 0.8250345781466113,
+   "median_lead_min": 35.0,
+   "false_alarms_per_patient_day": 0.2750830564784054,
+   "patient_days": 919.7222222222218
+  },
+  {
+   "coverage": 0.4,
+   "events": 1599,
+   "detected": 1120,
+   "sensitivity": 0.7004377736085053,
+   "alert_episodes": 1348,
+   "precision": 0.8382789317507419,
+   "median_lead_min": 30.0,
+   "false_alarms_per_patient_day": 0.23702808819087898,
+   "patient_days": 919.7222222222218
+  },
+  {
+   "coverage": 0.5,
+   "events": 1599,
+   "detected": 1073,
+   "sensitivity": 0.6710444027517198,
+   "alert_episodes": 1264,
+   "precision": 0.8528481012658228,
+   "median_lead_min": 30.0,
+   "false_alarms_per_patient_day": 0.20223497432799767,
+   "patient_days": 919.7222222222218
+  },
+  {
+   "coverage": 0.6,
+   "events": 1599,
+   "detected": 1023,
+   "sensitivity": 0.6397748592870544,
+   "alert_episodes": 1176,
+   "precision": 0.8681972789115646,
+   "median_lead_min": 30.0,
+   "false_alarms_per_patient_day": 0.1685291452733314,
+   "patient_days": 919.7222222222218
+  },
+  {
+   "coverage": 0.7,
+   "events": 1599,
+   "detected": 947,
+   "sensitivity": 0.592245153220763,
+   "alert_episodes": 1087,
+   "precision": 0.8767249310027599,
+   "median_lead_min": 25.0,
+   "false_alarms_per_patient_day": 0.14569616430081553,
+   "patient_days": 919.7222222222218
+  },
+  {
+   "coverage": 0.8,
+   "events": 1599,
+   "detected": 866,
+   "sensitivity": 0.541588492808005,
+   "alert_episodes": 988,
+   "precision": 0.8856275303643725,
+   "median_lead_min": 25.0,
+   "false_alarms_per_patient_day": 0.12286318332829967,
+   "patient_days": 919.7222222222218
+  },
+  {
+   "coverage": 0.9,
+   "events": 1599,
+   "detected": 699,
+   "sensitivity": 0.4371482176360225,
+   "alert_episodes": 798,
+   "precision": 0.8884711779448622,
+   "median_lead_min": 25.0,
+   "false_alarms_per_patient_day": 0.09676834793113867,
+   "patient_days": 919.7222222222218
+  }
+ ],
+ "low_alerts": {
+  "events": 732,
+  "detected": 163,
+  "sensitivity": 0.2226775956284153,
+  "alert_episodes": 246,
+  "precision": 0.6626016260162602,
+  "median_lead_min": 40.0,
+  "false_alarms_per_patient_day": 0.09024463908184842,
+  "patient_days": 919.7222222222218
+ },
+ "conformal": {
+  "30": {
+   "cqr_coverage": 0.8983506185180558,
+   "cqr_median_width": 36.02889826024652,
+   "split_coverage": 0.8987410970885917,
+   "split_width": 38.96538094065103,
+   "by_range": {
+    "below 70": {
+     "coverage": 0.7301198923415708,
+     "n": 4087
+    },
+    "70 to 180": {
+     "coverage": 0.9146585051546392,
+     "n": 93120
+    },
+    "above 180": {
+     "coverage": 0.8714049479588859,
+     "n": 30841
+    }
+   }
+  },
+  "60": {
+   "cqr_coverage": 0.8919242147667905,
+   "cqr_median_width": 49.608337604568874,
+   "split_coverage": 0.894552149556241,
+   "split_width": 59.67715711311719,
+   "by_range": {
+    "below 70": {
+     "coverage": 0.6352824578790882,
+     "n": 4036
+    },
+    "70 to 180": {
+     "coverage": 0.9192703825514973,
+     "n": 92432
+    },
+    "above 180": {
+     "coverage": 0.8432153584954943,
+     "n": 30628
+    }
+   }
+  },
+  "90": {
+   "cqr_coverage": 0.8871000820344545,
+   "cqr_median_width": 57.36184491809652,
+   "split_coverage": 0.8916671925285543,
+   "split_width": 71.29834610366981,
+   "by_range": {
+    "below 70": {
+     "coverage": 0.6001492908683752,
+     "n": 4019
+    },
+    "70 to 180": {
+     "coverage": 0.9194911118100672,
+     "n": 92201
+    },
+    "above 180": {
+     "coverage": 0.8271043330278832,
+     "n": 30556
+    }
+   }
+  },
+  "120": {
+   "cqr_coverage": 0.8867583298452888,
+   "cqr_median_width": 64.00868104171218,
+   "split_coverage": 0.8882035649131674,
+   "split_width": 75.72392141616503,
+   "by_range": {
+    "below 70": {
+     "coverage": 0.5855900621118012,
+     "n": 4025
+    },
+    "70 to 180": {
+     "coverage": 0.9211477705761651,
+     "n": 92109
+    },
+    "above 180": {
+     "coverage": 0.8226245531175178,
+     "n": 30489
+    }
+   }
+  }
+ },
+ "cardio": {
+  "n_windows": 675,
+  "n_positive": 17,
+  "n_events": 6,
+  "components": {
+   "iso_score": {
+    "name": "Isolation forest (unsupervised)",
+    "auroc": 0.7689969604863223,
+    "auroc_ci": [
+     0.64818492886716,
+     0.921293267997407
+    ],
+    "auprc": 0.24326930002721853,
+    "auprc_ci": [
+     0.024460171207950635,
+     0.5781676909060118
+    ],
+    "sens_at_90spec": 0.4117647058823529,
+    "sens_at_95spec": 0.35294117647058826
+   },
+   "z_score": {
+    "name": "Baseline z score composite",
+    "auroc": 0.9179331306990881,
+    "auroc_ci": [
+     0.8654026066089333,
+     0.9762241341251531
+    ],
+    "auprc": 0.3149047168408431,
+    "auprc_ci": [
+     0.07247707111549896,
+     0.5908687807036794
+    ],
+    "sens_at_90spec": 0.7647058823529411,
+    "sens_at_95spec": 0.4117647058823529
+   },
+   "lgbm_prob": {
+    "name": "LightGBM (supervised)",
+    "auroc": 0.9509207938494547,
+    "auroc_ci": [
+     0.8999313534386045,
+     0.9868594288500331
+    ],
+    "auprc": 0.34914930883167256,
+    "auprc_ci": [
+     0.10191745271504818,
+     0.6462126810273551
+    ],
+    "sens_at_90spec": 0.8823529411764706,
+    "sens_at_95spec": 0.6470588235294118
+   },
+   "risk": {
+    "name": "Stacked ensemble",
+    "auroc": 0.9519041659216878,
+    "auroc_ci": [
+     0.9019358422939067,
+     0.9863574941220461
+    ],
+    "auprc": 0.35131685925419387,
+    "auprc_ci": [
+     0.1059590627901923,
+     0.6447701058951059
+    ],
+    "sens_at_90spec": 0.8823529411764706,
+    "sens_at_95spec": 0.6470588235294118
+   }
+  },
+  "brier": 0.020022984936323984,
+  "prevalence": 0.025185185185185185,
+  "operating_point": {
+   "threshold": 0.0688070565503591,
+   "specificity": 0.9407294832826748,
+   "window_sensitivity": 0.7058823529411765,
+   "events_caught": 5,
+   "events": 6,
+   "median_lead_days": 3.0,
+   "flags_per_patient_day": 0.07555555555555556
+  },
+  "calibration_bins": [
+   {
+    "pred": 0.005141732134770661,
+    "obs": 0.0,
+    "n": 85
+   },
+   {
+    "pred": 0.005221375007447786,
+    "obs": 0.0,
+    "n": 84
+   },
+   {
+    "pred": 0.005311444231108533,
+    "obs": 0.0,
+    "n": 84
+   },
+   {
+    "pred": 0.005543715747584579,
+    "obs": 0.0,
+    "n": 85
+   },
+   {
+    "pred": 0.006938277309798299,
+    "obs": 0.0,
+    "n": 84
+   },
+   {
+    "pred": 0.010425972706398027,
+    "obs": 0.0,
+    "n": 84
+   },
+   {
+    "pred": 0.018107334161546546,
+    "obs": 0.023809523809523808,
+    "n": 84
+   },
+   {
+    "pred": 0.12759336722296083,
+    "obs": 0.17647058823529413,
+    "n": 85
+   }
+  ]
+ },
+ "twin": {
+  "n": 200,
+  "rmse_prior_median": 28.264965505251844,
+  "rmse_fit_median": 19.916653557219437
+ },
+ "limitations": [
+  "All data are synthetic. The ground truth simulator (UVA/Padova based) is more complex than the twin, but it is still a model; real patients have behaviours and sensor artefacts we did not simulate. These numbers show the method works end to end; they are not evidence of clinical performance.",
+  "Cardiovascular events are a synthetic composite driven by a latent strain process. With 6 events among test patients the confidence intervals are wide, and the supervised model has learned the shape of our simulated prodrome. Prospective validation on real outcomes would be required.",
+  "Conformal coverage assumes exchangeability. Readings within a patient are serially correlated, so the guarantee is approximate; coverage is lower in the hypoglycaemic range, where data are scarce.",
+  "Spike alerts depend on the declared routine. Unlogged or unplanned meals are the main source of missed spikes and wide intervals.",
+  "The dawn phenomenon amplitude was not identifiable from seven days for most patients and usually fits to zero.",
+  "Decision support only. Nothing here is a diagnosis or a treatment recommendation."
+ ]
+}
