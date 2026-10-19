@@ -1,0 +1,20 @@
+services:
+  api:
+    build: .
+    image: prativimb-api
+    environment:
+      PRATIVIMB_SPEED: "10"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      retries: 12
+  web:
+    build: ./frontend
+    image: prativimb-web
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "8080:80"

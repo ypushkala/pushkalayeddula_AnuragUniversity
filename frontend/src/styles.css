@@ -297,7 +297,7 @@ table.heat { border-collapse: separate; border-spacing: 2px; font-size: 12.5px; 
 .doc table.data td { text-align: right; padding: 5px 0 5px 22px; border-bottom: 1px solid var(--rule); }
 .doc table.data th:first-child, .doc table.data td:first-child { text-align: left; padding-left: 0; }
 .doc figure { margin: 14px 0 22px; }
-.doc figure img { max-width: 100%; border: 1px solid var(--rule); }
+.doc figure img { max-width: min(100%, 760px); border: 1px solid var(--rule); }
 .doc figcaption { font-size: 12px; color: var(--ink-3); margin-top: 4px; }
 .statement { border-left: 2px solid var(--ink); padding: 6px 0 6px 14px; font-family: var(--serif); font-size: 16px; margin: 16px 0; }
 

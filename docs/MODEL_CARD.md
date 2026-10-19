@@ -1,0 +1,103 @@
+# Model card: Prativimb hybrid patient twin, version 1.0
+
+> Decision support only, not a diagnosis. Every forecast, flag and simulation needs a clinician's judgement.
+
+The same content, with live numbers, is on the dashboard at `/model`. Full metrics: `reports/metrics.md`.
+
+## Model details
+
+| | |
+|---|---|
+| Developers | `<TeamName>`, `<CollegeName>` |
+| Version | 1.0, October 2026 |
+| Type | Hybrid: mechanistic ODE twin per patient, gradient boosted residual model, conformal intervals; separate cardiovascular ensemble |
+| Code | `prativimb/twin/` (twin), `prativimb/ml/` (residual, conformal, cardio, explanations) |
+| Licence | MIT |
+| Contact | `<team email>` |
+
+### Components
+
+1. **Twin.** Extended Bergman minimal model with seven states (glucose, remote insulin action, insulin, stomach and gut carbohydrate, exercise, metformin level). Known modifiers: circadian insulin sensitivity, three night sleep debt, night shift misalignment, dawn effect, metformin regularity, food specific absorption speed. Eight personal parameters (insulin sensitivity, glucose effectiveness, basal glucose, absorption rate, secretion gain, dawn amplitude, exercise uptake, carbohydrate effect).
+2. **Personalisation.** An EHR prior (HbA1c, BMI, fasting glucose, TCF7L2 genotype, diagnosis, age) then maximum a posteriori least squares (scipy) on days 1 to 7 of CGM, logged meals, steps and doses. Forecasts start from a six hour observer warm up on CGM.
+3. **Residual model.** LightGBM per horizon (30, 60, 90, 120 min) predicts the twin's error from CGM history and trend, logged and expected meals, steps and heart rate, completed sleep, medication adherence, EHR covariates and twin parameters.
+4. **Uncertainty.** Conformalised quantile regression (Romano, Patterson and Candes 2019), written by hand in `prativimb/ml/conformal.py`, calibrated on 40 held out patients. The display band is 90%. The alert tier uses the lower bound of the 50% interval, a level chosen on calibration patients as the most sensitive one with at most 0.10 false alarms per patient day.
+5. **Cardiovascular ensemble.** Seven day wearable windows (resting heart rate, nightly RMSSD, sleep architecture, awakenings, efficiency, steps) with per patient baseline z scores; isolation forest and a composite z score (unsupervised), LightGBM (supervised on synthetic episodes), stacked by logistic regression on calibration patients. Operating threshold at 95% specificity on calibration patients.
+6. **Explanations.** Exact Shapley values over six twin inputs (upcoming meal, recent meals, activity, sleep and shift, medication, personal physiology) plus TreeSHAP of the residual model, both in mg/dL of predicted peak, worded as one clinical sentence. Cardiovascular factors are SHAP values grouped by measure and worded against the patient's own baseline.
+
+## Intended use
+
+* Remote monitoring of adults with prediabetes or Type 2 diabetes who wear a CGM and a wrist band, by a clinical team.
+* Two hour glucose forecasts with calibrated uncertainty; early warning of rises above 180 mg/dL and of lows.
+* Weekly review of cardiovascular drift from wearables.
+* Shared decision making: exploring what if questions with the patient.
+
+## Out of scope
+
+* Insulin dosing, closed loop control, Type 1 diabetes, gestational diabetes, children.
+* Diagnosis or triage of acute coronary syndrome.
+* Any use on real patients before prospective validation, regulatory review (CDSCO Software as a Medical Device pathway) and local governance.
+
+## Training and evaluation data
+
+Synthetic only (see `docs/DATA.md`). 200 fictional patients, 30 days each. Split by patient: 120 train, 40 calibration, 40 test; the three demo patients are in test. Twins calibrate on days 1 to 7; every metric is computed on days 8 to 30 of test patients.
+
+## Factors
+
+Phenotype (healthy, prediabetes, T2D), diet region, fasting observance (Ramadan, Hindu fasts), night shift work, medication class, device platform. Performance by phenotype and by glucose range is in `reports/metrics.md`; interval coverage drops in the hypoglycaemic range.
+
+## Metrics (test patients)
+
+### Glucose forecasting (Event A)
+
+| Model | RMSE 30 min | RMSE 60 min | RMSE 120 min | MARD 60 min |
+|---|---:|---:|---:|---:|
+| Twin, EHR prior only | 25.8 | 33.4 | 35.2 | 16.1% |
+| Twin, calibrated (physics only) | 16.7 | 24.8 | 29.0 | 13.4% |
+| LightGBM only | 13.7 | 21.6 | 27.6 | 11.5% |
+| **Hybrid** | **12.9** | **20.2** | **25.2** | **11.1%** |
+
+Clarke error grid, hybrid: zone A 94.2% (30 min), 85.4% (60 min), 79.3% (120 min); zones C to E 1.4%, 2.5%, 3.1%.
+
+| Spike alert policy | Sensitivity | Precision | Median lead | False alarms per patient day |
+|---|---:|---:|---:|---:|
+| Alert tier (lower bound of 50% interval) | 67.1% | 85.2% | 30 min | 0.20 |
+| Watch tier (hybrid point forecast) | 90.3% | 69.8% | 75 min | 0.65 |
+| Lower bound of 90% interval | 43.7% | 88.8% | 25 min | 0.10 |
+
+1,599 spike onsets over 920 patient days.
+
+| Horizon | 90% interval coverage | Median width |
+|---|---:|---:|
+| 30 min | 89.8% | 36 mg/dL |
+| 60 min | 89.2% | 50 mg/dL |
+| 90 min | 88.7% | 57 mg/dL |
+| 120 min | 88.7% | 64 mg/dL |
+
+### Cardiovascular risk flag (Event B)
+
+675 windows, 17 positive (event in the next 3 days), 6 distinct events, prevalence 2.5%. Patient level bootstrap 95% intervals.
+
+| Detector | AUROC | AUPRC | Sensitivity at 90% specificity |
+|---|---|---|---:|
+| Isolation forest | 0.77 (0.65 to 0.92) | 0.24 (0.02 to 0.58) | 41% |
+| Baseline z score composite | 0.92 (0.87 to 0.98) | 0.32 (0.07 to 0.59) | 76% |
+| LightGBM | 0.95 (0.90 to 0.99) | 0.36 (0.11 to 0.65) | 88% |
+| **Stacked ensemble** | **0.95 (0.90 to 0.99)** | **0.36 (0.11 to 0.65)** | **88%** |
+
+At the operating threshold (6.9% risk): specificity 94.4%, 5 of 6 events flagged in the 3 days before (median lead 3 days), 7.3% of patient days flagged. Brier score 0.020.
+
+## Ethical considerations
+
+* **Privacy.** No personal data was processed. The design assumes DPDP Act 2023 obligations for a real deployment: purpose limited, time bound, revocable consent (modelled as a FHIR `Consent` per patient), data minimisation (no identifiers in features), on premises inference, audit logging, ABDM consent manager integration.
+* **Automation bias.** Alerts carry their reasons and their uncertainty; the alert tier is deliberately conservative; the what-if page says "a conversation aid, not a prescription".
+* **Equity.** The synthetic cohort spans regions, religions and both sexes, but it encodes our assumptions. Real data may reveal subgroup gaps (for example in women, older adults or people with CKD) that synthetic data cannot.
+* **Alarm fatigue.** Two tiers: only the confident tier is pushed to the ward list.
+
+## Caveats and limitations
+
+* Synthetic ground truth is still a model; these numbers show the method works end to end, not clinical performance.
+* Only 6 cardiovascular events among test patients; intervals are wide and the supervised model has learned our simulated prodrome.
+* Conformal guarantees assume exchangeability; within patient correlation makes coverage approximate, and it is lower below 70 mg/dL.
+* Forecasts rely on the declared routine; unlogged and unplanned meals are the main source of error.
+* The dawn amplitude is usually not identifiable from one week and fits to zero.
+* What-if results come from the mechanistic twin only (the learned correction is trained for 2 hour forecasts); effect sizes for walking and food swaps are only as good as the calibration week's excitation.

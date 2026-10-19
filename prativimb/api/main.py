@@ -171,8 +171,8 @@ def fhir_bundle(pid: str):
 @app.get("/api/model-card")
 def model_card():
     m = state().metrics
-    return clean({"metrics": m, "alert_level": state().alert_cov, "cardio_threshold": state().cardio_threshold,
-                  "figures": sorted(p.name for p in config.FIGURE_DIR.glob("*.png"))})
+    return {"metrics": m, "alert_level": state().alert_cov, "cardio_threshold": state().cardio_threshold,
+            "figures": sorted(p.name for p in config.FIGURE_DIR.glob("*.png"))}
 
 
 @app.websocket("/ws/stream")

@@ -34,7 +34,7 @@ def hhmm(minute: float) -> str:
 
 def clean(x):
     if isinstance(x, (float, np.floating)):
-        return None if not np.isfinite(x) else round(float(x), 2)
+        return None if not np.isfinite(x) else round(float(x), 4)
     if isinstance(x, (np.integer,)):
         return int(x)
     if isinstance(x, dict):
