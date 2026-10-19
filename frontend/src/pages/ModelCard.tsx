@@ -15,7 +15,7 @@ export function ModelCard() {
   return (
     <article className="doc">
       <div className="label">Model card</div>
-      <h1>Prativimb hybrid patient twin, version 1.0</h1>
+      <h1>Prativimb hybrid patient twin, version 1.1</h1>
       <p className="statement">Decision support only, not a diagnosis. Every forecast and flag needs a clinician's judgement.</p>
 
       <h2>Intended use</h2>
@@ -81,6 +81,23 @@ export function ModelCard() {
           {["30", "60", "90", "120"].map(h => <tr key={h}><td>{h} min</td><td>{pct(cf[h].cqr_coverage)}</td><td>{fmt(cf[h].cqr_median_width)} mg/dL</td></tr>)}
         </tbody>
       </table>
+      {m.hypo && (
+        <>
+          <h3 style={{ marginTop: 18 }}>Low glucose (below 70 mg/dL), test patients</h3>
+          <table className="data num">
+            <thead><tr><th>Policy</th><th>Flagged in advance</th><th>Precision</th><th>False alarms per patient day</th></tr></thead>
+            <tbody>
+              <tr style={{ fontWeight: 500 }}><td>Low glucose classifier (deployed)</td><td>{pct(m.hypo.test_classifier.sensitivity, 0)}</td>
+                <td>{pct(m.hypo.test_classifier.precision, 0)}</td><td>{fmt(m.hypo.test_classifier.false_alarms_per_patient_day, 2)}</td></tr>
+              <tr><td>Point forecast below 70</td><td>{pct(m.hypo.test_point_forecast.sensitivity, 0)}</td>
+                <td>{pct(m.hypo.test_point_forecast.precision, 0)}</td><td>{fmt(m.hypo.test_point_forecast.false_alarms_per_patient_day, 2)}</td></tr>
+            </tbody>
+          </table>
+          <p className="small muted">Labels cleaned of sensor compression artefacts. The artefact filter finds {m.hypo.artefact_detector.dips_found} of
+            {" "}{m.hypo.artefact_detector.dips} injected dips that reach below 90 mg/dL, and {pct(m.hypo.artefact_detector.reading_precision, 0)} of
+            the readings it flags are true artefacts.</p>
+        </>
+      )}
       <figure><img src="/figures/glucose_rmse_by_horizon.png" alt="Forecast error by horizon" /><figcaption>Forecast error by horizon. The hybrid beats both of its parts at every horizon.</figcaption></figure>
       <figure><img src="/figures/alert_tradeoff.png" alt="Spike alert policies" /><figcaption>Alert policies on test patients.</figcaption></figure>
       <figure><img src="/figures/clarke_grid_60min.png" alt="Clarke error grid" style={{ maxWidth: 480 }} /><figcaption>Clarke error grid, 60 minute hybrid forecast.</figcaption></figure>
@@ -103,6 +120,30 @@ export function ModelCard() {
         were flagged in the 3 days before, with {pct(c.operating_point.flags_per_patient_day)} of patient days flagged.
       </p>
       <figure><img src="/figures/cardio_performance.png" alt="Cardiovascular model performance" /><figcaption>ROC, precision and recall, and calibration.</figcaption></figure>
+
+      {m.real_data && (
+        <>
+          <h2>Validation on real CGM traces</h2>
+          <p>
+            CGMacros (PhysioNet, open access, CC BY-NC-SA 4.0): {m.real_data.participants} adults with normoglycaemia,
+            prediabetes or Type 2 diabetes, Dexcom G6 and Fitbit for about ten days, meals with known carbohydrate. Twins
+            calibrate on days 1 to 5; days 6 onward are scored. Models trained only on synthetic data are applied unchanged.
+          </p>
+          <table className="data num">
+            <thead><tr><th>RMSE, all participants</th><th>30 min</th><th>60 min</th><th>120 min</th></tr></thead>
+            <tbody>
+              {([["persist", "Persistence"], ["phys", "Twin, routine prior"], ["hyb", "Hybrid, synthetic trained"],
+                 ["known", "Twin, meals announced"]] as [string, string][]).map(([k, name]) => (
+                <tr key={k} style={k === "known" ? { fontWeight: 500 } : undefined}><td>{name}</td>
+                  {["30", "60", "120"].map(h => <td key={h}>{fmt(m.real_data.by_group.all[h][k], 1)}</td>)}</tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="small muted">90% interval coverage on real data: {pct(m.real_data.conformal["120"].synthetic_calibration, 0)} at 2 h
+            with synthetic calibration, {pct(m.real_data.conformal["120"].site_recalibrated, 0)} after refitting the conformal margin on local participants.</p>
+          <figure><img src="/figures/real_data_cgmacros.png" alt="Real data validation" /><figcaption>Forecast error and interval coverage on CGMacros.</figcaption></figure>
+        </>
+      )}
 
       <h2>Limitations</h2>
       <ul>{m.limitations.map((l: string, i: number) => <li key={i}>{l}</li>)}</ul>

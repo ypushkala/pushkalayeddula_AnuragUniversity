@@ -37,6 +37,8 @@ A diabetes and cardiometabolic clinic monitors patients remotely between visits.
 * **Event B, cardiovascular risk flag.** From a rolling seven day window of resting heart rate, HRV (RMSSD), sleep architecture and activity, conditioned on hypertension, lipids and family history, estimate the risk of an event in the next three days, with a weekly trajectory and the top contributing factors.
 * **What if.** Re-simulate the next six hours under a walk, a food swap, a meal time shift, a missed metformin dose, different sleep or a night shift, and compare peak glucose and time above range.
 * **Record.** One click SOAP note (printable page and PDF) of the twin's findings.
+* **Low glucose.** A dedicated model for glucose below 70 mg/dL within 60 minutes, with overnight sensor compression artefacts recognised and reported as such instead of as lows.
+* **Working the list.** Clinicians acknowledge and snooze alerts (with an audit trail), tell the twin about a planned or eaten meal so the forecast updates at once, see what changed since they last looked, and share a large type summary with the patient in English, Hindi or Tamil.
 
 Three fictional demo patients carry the story:
 
@@ -52,7 +54,9 @@ Three fictional demo patients carry the story:
 | **Hypoglycaemia to rebound around iftar** | **Cardio week** |
 | ![Fatima](docs/screenshots/04_twin_fatima_iftar.png) | ![Cardio](docs/screenshots/05_cardio_suresh.png) |
 
-More screens (clinical note, model card, dark mode) are in [`docs/screenshots/`](docs/screenshots/).
+More screens (clinical note, model card, patient view, phone layout, dark mode) are in [`docs/screenshots/`](docs/screenshots/).
+
+**Using it.** Ward: `j` and `k` move, `Enter` opens, `/` searches, and the summary bar lists new and resolved alerts since your last visit. Twin: acknowledge an alert with a snooze and a note; under *Tell the twin about a meal* add a planned dinner ("in 1 h, 60 g millet") and the forecast and reasons update. What if: switch between *Tonight, next meal* and *Next 24 h, every meal*; the ranked lever table shows what helps this patient most. *Patient view* opens a printable, shareable summary. Every chart has a *Show as table* toggle.
 
 ## 5. Technical stack
 
@@ -67,7 +71,7 @@ More screens (clinical note, model card, dark mode) are in [`docs/screenshots/`]
 | API | FastAPI, Pydantic (FHIR shaped schemas), Uvicorn, WebSocket replay, ReportLab (PDF) |
 | Dashboard | React 18, Vite 5, Observable Plot, IBM Plex Serif and Sans |
 | Docs | Matplotlib (charts and architecture as code), python-pptx, Playwright (screenshots) |
-| Quality | pytest (28 tests), style check for dashes and emoji |
+| Quality | pytest (34 tests), style check for dashes and emoji, axe-core accessibility audit (WCAG 2.1 AA, clean) |
 | Deployment | Docker Compose, or a Makefile without Docker |
 
 ## 6. AI/ML model and framework details
@@ -76,7 +80,8 @@ More screens (clinical note, model card, dark mode) are in [`docs/screenshots/`]
 2. **Residual LightGBM (data).** One model per horizon (30, 60, 90, 120 min) learns the twin's error from CGM history and trend, logged and expected meals, steps and heart rate, completed sleep, adherence, EHR covariates and twin parameters. Ablations: physics only, ML only (no twin features), hybrid.
 3. **Conformal layer.** Conformalised quantile regression (Romano et al. 2019) with quantile LightGBMs, calibrated on 40 held out patients: 90% intervals for display; the alert uses the lower bound of the 50% interval ("at least a 75% chance of exceeding 180"), a level chosen on calibration patients as the most sensitive with at most 0.10 false alarms per patient day.
 4. **Cardiovascular anomaly ensemble.** Per patient baseline z scores and an isolation forest (unsupervised) plus a LightGBM classifier trained on synthetic labelled episodes, stacked by logistic regression on calibration patients; threshold at 95% specificity.
-5. **Explainability.** Exact Shapley values over six twin inputs (64 batched simulations) plus TreeSHAP of the residual model, in mg/dL of predicted peak, turned into one sentence such as *"Expected dinner (about 130 g carbohydrate at 20:15), reduced insulin sensitivity (HbA1c 8.4%, BMI 27.1) and short sleep (4.9 h, last 3 nights) and night shift are driving this forecast."* Cardiovascular factors are worded against the patient's own baseline.
+5. **Low glucose model.** A LightGBM classifier for glucose below 70 mg/dL within 60 minutes, trained on labels cleaned by a compression artefact filter (fast, symmetric overnight dips), with its threshold chosen on calibration patients.
+6. **Explainability.** Exact Shapley values over six twin inputs (64 batched simulations) plus TreeSHAP of the residual model, in mg/dL of predicted peak, turned into one sentence such as *"Expected dinner (about 130 g carbohydrate at 20:15), reduced insulin sensitivity (HbA1c 8.4%, BMI 27.1) and short sleep (4.9 h, last 3 nights) and night shift are driving this forecast."* Cardiovascular factors are worded against the patient's own baseline.
 
 Details: [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md).
 
@@ -123,7 +128,23 @@ All metrics on **40 test patients** never used for training, early stopping or c
 | Sensitivity at 90% specificity | 88% |
 | Events flagged in the 3 days before, at operating point | 5 of 6 (median lead 3 days, 94% specificity) |
 
+| Low glucose, flagged in advance (classifier against point forecast) | 37% against 18%, 61% precision, 0.19 false alarms per patient day |
+
 ![Error by horizon](reports/figures/glucose_rmse_by_horizon.png)
+
+### Real CGM traces
+
+We also tested on **CGMacros** (PhysioNet, open access, CC BY-NC-SA 4.0): 45 adults in the US with normoglycaemia, prediabetes or Type 2 diabetes, Dexcom G6 and Fitbit for about ten days, meals with known carbohydrate. Twins calibrate on days 1 to 5; models trained only on our synthetic data are applied unchanged. Full results: [`reports/real_data.md`](reports/real_data.md).
+
+| RMSE on real traces (mg/dL) | 30 min | 60 min | 120 min |
+|---|---:|---:|---:|
+| Persistence (glucose stays where it is) | 19.7 | 28.6 | 38.3 |
+| Hybrid, trained on synthetic data only | 19.3 | 29.5 | 36.7 |
+| **Twin, meals announced in advance** | 20.7 | **26.1** | **29.6** |
+
+The honest reading: synthetic training transfers at about persistence level, while the calibrated twin cuts 2 hour error by 23% when it knows the meal, which is what the planned meal input provides. Synthetic calibrated intervals under cover on real data (78% at 2 h) and recover to 88% once the conformal margin is refitted on local participants.
+
+![Real data](reports/figures/real_data_cgmacros.png)
 
 ## 11. Quick start
 
@@ -158,6 +179,8 @@ make test          # pytest: twin, conformal, data, evaluation, API
 make docs          # architecture diagram and slides from the latest metrics
 make screenshots   # needs make api and make web running
 make check         # fails on any em dash, en dash or emoji in the repository
+make a11y          # axe-core accessibility audit of every screen, light and dark (needs make serve)
+make realdata      # download CGMacros from PhysioNet, verify its checksum, validate on real traces
 ```
 
 The demo clock starts at Sunday 15 March 2026, 19:45 IST. Use the masthead controls to pause, change speed, or jump (17:30 and 18:00 are useful for Fatima). Set `PRATIVIMB_PAUSED=1` or `PRATIVIMB_SPEED=60` before `make api` to change the default.
@@ -181,6 +204,8 @@ tests/              pytest suite
 * **Synthetic only.** 200 fictional patients from our Synthea style generator (FHIR R4 bundles) and the UVA/Padova glucose model with simglucose parameters and CGM noise (MIT). No dataset requiring a data use agreement, and no real person's data, is used. Every source and licence is listed in [`docs/DATA.md`](docs/DATA.md).
 * **DPDP Act 2023 and HIPAA.** No personal data is processed, so neither applies to this prototype. The design assumes them for deployment: a FHIR `Consent` per patient modelled on a DPDP consent artefact (purpose limited, time bound, revocable), no identifiers in model features, on premises inference, audit logging, and ABDM consent manager integration on the roadmap.
 * **Reproducible.** Seed 20260315; one command regenerates every file.
+* **Real data for validation only.** CGMacros (Gutierrez-Osuna, Kerr, Mortazavi and Das, PhysioNet 2025, doi:10.13026/3z8q-x658) is open access under CC BY-NC-SA 4.0 and needs no data use agreement. It is downloaded by `scripts/fetch_cgmacros.sh` (checksum verified), used only for non commercial evaluation, and not redistributed; only derived metrics are committed.
+* **Acknowledgements and meal entries** are stored locally (`artifacts/clinical_store.json`) with an append only audit log (`artifacts/audit.jsonl`) carrying replay time and wall clock time.
 
 ## 13. Open-source licence details
 
@@ -196,7 +221,9 @@ Third party components and their licences:
 | Matplotlib | Matplotlib licence (PSF based) |
 | React, React Router, Vite, Fontsource packages | MIT |
 | Observable Plot | ISC |
-| IBM Plex Serif and Sans (in `assets/fonts`) | SIL Open Font License 1.1 |
+| IBM Plex Serif and Sans (in `assets/fonts`), Noto Sans Devanagari and Tamil | SIL Open Font License 1.1 |
+| axe-core (accessibility audit, dev only) | MPL 2.0 |
+| CGMacros dataset (validation only, not redistributed) | CC BY-NC-SA 4.0 |
 | UVA/Padova model equations (Dalla Man et al. 2007) | Published research, implemented independently |
 
 ## 14. Limitations and future work
@@ -207,7 +234,9 @@ Third party components and their licences:
 * Six cardiovascular events among test patients: intervals are wide, and the classifier has learned our simulated prodrome.
 * Conformal coverage is approximate with serially correlated readings and lower in the hypoglycaemic range.
 * Unlogged and unplanned meals cause most missed spikes; the twin relies on the declared routine.
-* What-if effects are as good as the calibration week's excitation; the dawn effect is usually not identifiable from one week.
+* What-if effects are as good as the calibration week's excitation; the dawn effect is usually not identifiable from one week. Beyond about 6 hours the twin's absolute levels drift high for some patients, so the 24 hour view should be read as a comparison between scenarios.
+* On real traces, synthetic training alone is not enough: the residual model needs local retraining, the conformal margin needs per site recalibration, and twin forecasts should start from the last reading rather than the observer estimate.
+* Hindi and Tamil patient texts are drafts and need review by a native speaking clinician.
 
 **Future work**
 

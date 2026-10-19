@@ -83,7 +83,7 @@ function Shell() {
       </main>
       <footer className="footer">
         <span>Synthetic data only. Decision support, not a diagnosis.</span>
-        <span>Prativimb 1.0, MIT licence</span>
+        <span>Prativimb 1.1, MIT licence</span>
       </footer>
     </>
   );

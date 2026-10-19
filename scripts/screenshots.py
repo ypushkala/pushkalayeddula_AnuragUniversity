@@ -28,6 +28,10 @@ SHOTS = [
     ("07_model_card", "/model", "2026-03-15T19:45:00+05:30", "light", "table.data", None),
     ("08_ward_dark", "/", "2026-03-15T19:45:00+05:30", "dark", "table.ward tbody tr", None),
     ("09_twin_ramesh_dark", "/patient/PTV-0001", "2026-03-15T19:45:00+05:30", "dark", ".factors", None),
+    ("10_whatif_24h_levers", "/patient/PTV-0001/whatif", "2026-03-15T19:45:00+05:30", "light", "table.levers", "Next 24 h, every meal"),
+    ("11_patient_view_hindi", "/share/PTV-0001", "2026-03-15T19:45:00+05:30", "light", ".share h1", "lang:hi"),
+    ("12_phone_ward", "/", "2026-03-15T19:45:00+05:30", "light", "table.ward tbody tr", "phone"),
+    ("13_phone_twin", "/patient/PTV-0001", "2026-03-15T19:45:00+05:30", "light", ".card", "phone"),
 ]
 
 
@@ -45,18 +49,23 @@ def main(only: list[str] | None = None) -> None:
             if only and name not in only:
                 continue
             set_clock(at)
-            ctx = browser.new_context(viewport={"width": 1500, "height": 960}, device_scale_factor=1.5,
-                                      color_scheme=theme)
+            phone = click == "phone"
+            ctx = browser.new_context(viewport={"width": 390, "height": 844} if phone else {"width": 1500, "height": 960},
+                                      device_scale_factor=2 if phone else 1.5, is_mobile=phone, color_scheme=theme)
             page = ctx.new_page()
             page.add_init_script(f"localStorage.setItem('prativimb-theme', '{theme}')")
             page.goto(WEB + path, wait_until="load")
             page.wait_for_selector(sel, timeout=30000)
             page.wait_for_function("!document.body.innerText.includes('Replaying the last 6 hours')", timeout=60000)
-            if click:
+            page.wait_for_function("!document.querySelector('[aria-busy=true]')", timeout=60000)
+            if click and click.startswith("lang:"):
+                page.select_option(".share-tools select", click[5:])
+                page.wait_for_timeout(800)
+            elif click and click != "phone":
                 page.get_by_text(click, exact=True).click()
-                page.wait_for_timeout(1500)
+                page.wait_for_timeout(4000)
             page.wait_for_timeout(1200)
-            viewport_only = name.startswith(("01", "08"))
+            viewport_only = name.startswith(("01", "03", "08", "12", "13"))
             page.screenshot(path=str(OUT / f"{name}.png"), full_page=not viewport_only)
             print("saved", name)
             ctx.close()

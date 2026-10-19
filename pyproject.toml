@@ -1,6 +1,6 @@
 [project]
 name = "prativimb"
-version = "1.0.0"
+version = "1.1.0"
 description = "Hybrid patient digital twin for glucose spike and cardiovascular risk forecasting (synthetic data)"
 readme = "README.md"
 license = { text = "MIT" }

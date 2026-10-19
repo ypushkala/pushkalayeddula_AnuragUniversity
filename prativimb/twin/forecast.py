@@ -262,6 +262,7 @@ def apply_scenario(pp: Prepared, k: int, H: int, sc: Scenario):
                 walk_starts.append(W)  # meal already eaten: a walk can still start now
     if targets:
         info.update(target_step=targets[0][0] - W, target_carbs=targets[0][1])
+    first = targets[0][0] if targets else None
     for m in targets:
         c0 = m[0]
         is_dinner = names.get(c0, "").lower().startswith(("dinner", "fasting dinner"))
@@ -272,7 +273,7 @@ def apply_scenario(pp: Prepared, k: int, H: int, sc: Scenario):
             m[2] = a_new
         walk_starts.append(max(m[0] + 2, W))
         info["meals_changed"] += 1
-        if c0 == targets[0][0]:
+        if c0 == first:
             info["meal_step"] = m[0] - W
     _write_future(u, meals)
     if sc.walk_minutes:

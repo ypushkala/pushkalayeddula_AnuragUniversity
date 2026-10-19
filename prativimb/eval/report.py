@@ -396,7 +396,18 @@ def write_markdown(m: dict) -> str:
     L.append(f"Median in sample error over the calibration week fell from {tw['rmse_prior_median']:.1f} mg/dL "
              f"(EHR prior only) to {tw['rmse_fit_median']:.1f} mg/dL after wearable calibration, across "
              f"{tw['n']} patients. Calibration takes about one second per patient.\n")
-    L.append("## 4. Evaluation design\n")
+    rd = m.get("real_data")
+    if rd:
+        a = rd["by_group"]["all"]
+        L.append("## 4. Real CGM traces (CGMacros)\n")
+        L.append(f"On {rd['participants']} real participants (open access CGMacros, Dexcom G6), the calibrated twin told about "
+                 f"each meal in advance reached a 2 hour RMSE of {a['120']['known']:.1f} mg/dL against {a['120']['persist']:.1f} for "
+                 f"persistence. Models trained only on synthetic data transfer at about persistence level "
+                 f"({a['120']['hyb']:.1f}). Synthetic calibrated intervals under cover on real data "
+                 f"({rd['conformal']['120']['synthetic_calibration'] * 100:.0f}% at 2 hours) and recover to "
+                 f"{rd['conformal']['120']['site_recalibrated'] * 100:.0f}% once the conformal margin is refitted on local "
+                 "participants. Full results: [real_data.md](real_data.md).\n")
+    L.append("## 5. Evaluation design\n")
     L.append(f"* Patient level split: {m['split']['train_patients']} train, {m['split']['calibration_patients']} "
              f"calibration, {m['split']['test_patients']} test. No patient contributes to more than one split. "
              "The three demo patients are in the test split.")
@@ -404,7 +415,7 @@ def write_markdown(m: dict) -> str:
     L.append("* Forecasts use only information available at the origin. Future meals come from the routine the "
              "patient declared at enrolment, not from the meal log.")
     L.append("* Early stopping uses a validation slice of training patients.\n")
-    L.append("## 5. Limitations\n")
+    L.append("## 6. Limitations\n")
     for item in m["limitations"]:
         L.append(f"* {item}")
     L.append("")
@@ -421,7 +432,13 @@ LIMITATIONS = [
     "Conformal coverage assumes exchangeability. Readings within a patient are serially correlated, so the "
     "guarantee is approximate; coverage is lower in the hypoglycaemic range, where data are scarce.",
     "Spike alerts depend on the declared routine. Unlogged or unplanned meals are the main source of missed "
-    "spikes and wide intervals.",
+    "spikes and wide intervals; the planned meal input addresses this when it is used.",
+    "On real CGM traces (CGMacros, 45 people) models trained only on synthetic data perform at about persistence "
+    "level; the twin is clearly better only when meals are announced. Twin forecasts start from the observer estimate "
+    "rather than the last reading, which costs accuracy at 30 minutes. Local retraining and per site conformal "
+    "recalibration are needed before any deployment.",
+    "Low glucose forecasting flags 37% of lows in advance with a short median lead; most lows in this cohort are brief "
+    "level 1 dips in people without diabetes.",
     "The dawn phenomenon amplitude was not identifiable from seven days for most patients and usually fits to zero.",
     "Decision support only. Nothing here is a diagnosis or a treatment recommendation.",
 ]
@@ -449,6 +466,8 @@ def run(verbose: bool = True) -> dict:
     lows = evaluate_alerts(t, cgm, low_alert, onset_fn=low_onsets)
     conf = conformal_summary(t, {h: bundle["models"][h]["abs_q"] for h in config.HORIZONS})
 
+    rd_path = config.REPORT_DIR / "real_data.json"
+    real = json.loads(rd_path.read_text()) if rd_path.exists() else None
     hypo_path = config.ARTIFACT_DIR / "low_metrics.json"
     hypo_metrics = json.loads(hypo_path.read_text()) if hypo_path.exists() else None
     cardio_model = joblib.load(config.ARTIFACT_DIR / "cardio_model.joblib")
@@ -461,7 +480,7 @@ def run(verbose: bool = True) -> dict:
     metrics = {
         "generated": datetime.now().strftime("%d %b %Y"),
         "split": {f"{k}_patients": sum(v == k for v in split.values()) for k in ("train", "calibration", "test")},
-        "glucose": acc, "alerts": policies, "alert_level": alert_cfg, "alert_curve": curve, "low_alerts": lows, "hypo": hypo_metrics, "conformal": conf, "cardio": cm,
+        "glucose": acc, "alerts": policies, "alert_level": alert_cfg, "alert_curve": curve, "low_alerts": lows, "hypo": hypo_metrics, "real_data": real, "conformal": conf, "cardio": cm,
         "twin": {"n": len(twins), "rmse_prior_median": float(twins.rmse_prior.median()),
                  "rmse_fit_median": float(twins.rmse_fit.median())},
         "limitations": LIMITATIONS,

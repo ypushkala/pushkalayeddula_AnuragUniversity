@@ -110,7 +110,9 @@ def spec(m: dict, cs: dict) -> list[Slide]:
         Rule(0.9, 3.65, 11.5, INK, 1.0),
         Text(0.9, 3.95, 11, "Hybrid digital twin for Type 2 diabetes and cardiovascular risk, built for Indian patients.", 16, INK2),
         Text(0.9, 4.45, 11, "Happiest Health hackathon. Digital Twin track, Phase 1: prototype and code.", 14, INK3),
-        Text(0.9, 6.3, 11, "<TeamName>, <CollegeName>.  Prativimb is Sanskrit for reflection. All patient data shown is synthetic.", 12, INK3),
+        Text(0.9, 5.45, 11, "<TeamName>, <CollegeName> / <Incubator>", 15, INK),
+        Text(0.9, 5.9, 11.5, "<Member 1, role>   <Member 2, role>   <Member 3, role>   <Member 4, role>   <team email>", 12.5, INK2),
+        Text(0.9, 6.55, 11.5, "Prativimb is Sanskrit for reflection. Patient data shown is synthetic; real data validation uses open access CGMacros.", 11, INK3),
     ]))
 
     S.append(Slide("The problem", "Why now", [
@@ -204,6 +206,17 @@ def spec(m: dict, cs: dict) -> list[Slide]:
              f"Only {c['n_events']} test events, so intervals are wide.", 13, INK2),
     ]))
 
+    rd = m.get("real_data")
+    if rd:
+        a = rd["by_group"]["all"]
+        S.append(Slide("Real CGM traces: what transfers and what does not", "Validation", [
+            Img(str(FIG / "real_data_cgmacros.png"), 0.6, 1.5, 12.1, 4.3),
+            Text(0.9, 5.95, 11.6, f"CGMacros (PhysioNet, open access): {rd['participants']} adults, Dexcom G6, meals with known carbohydrate. "
+                 f"Trained only on synthetic data, the hybrid lands near persistence ({a['120']['hyb']:.1f} against {a['120']['persist']:.1f} mg/dL at 2 h). "
+                 f"Told about meals in advance, the calibrated twin reaches {a['120']['known']:.1f}. Interval coverage recovers from "
+                 f"{rd['conformal']['120']['synthetic_calibration'] * 100:.0f}% to {rd['conformal']['120']['site_recalibrated'] * 100:.0f}% after per site recalibration.", 12.5, INK2),
+        ]))
+
     S.append(Slide("What if: Ramesh, 52, night shift, T2D", "Case study", [
         Img(str(SHOTS / "03_whatif_ramesh.png"), 0.6, 1.45, 7.6, 4.86, border=True),
         Text(8.6, 1.6, 4.2, f"19:45. The hybrid forecast expects dinner at {cs['walk']['target_meal']['time']} and a peak near "
@@ -217,8 +230,9 @@ def spec(m: dict, cs: dict) -> list[Slide]:
     S.append(Slide("Clinical workflow", "Use", [
         Img(str(SHOTS / "01_ward.png"), 0.6, 1.45, 6.0, 3.84, border=True),
         Img(str(SHOTS / "06_note_ramesh.png"), 6.85, 1.45, 5.9, 4.04, border=True),
-        Text(0.6, 5.55, 6.0, "1. Ward list sorted by alerts, cardiovascular flags and forecast peak. 2. Open the twin: forecast band, reasons, alert log, AGP.", 12, INK2),
-        Text(6.85, 5.7, 5.9, "3. Try what if with the patient. 4. One click SOAP note, printable or PDF, for the record.", 12, INK2),
+        Text(0.6, 5.55, 6.0, "1. Ward sorted by alerts, with what changed since the last look; acknowledge and snooze, with an audit trail. "
+             "2. Open the twin: forecast band, reasons, alert log, AGP; tell it about tonight's meal.", 12, INK2),
+        Text(6.85, 5.7, 5.9, "3. Rank the levers for this patient and share them in English, Hindi or Tamil. 4. One click SOAP note for the record.", 12, INK2),
     ]))
 
     S.append(Slide("Privacy, safety and limits", "Governance", [
@@ -241,20 +255,10 @@ def spec(m: dict, cs: dict) -> list[Slide]:
             ["9 months", "ABDM integration (health ID, consent manager, FHIR); real device APIs (Libre, Dexcom, Health Connect)."],
             ["12 months", "Prospective pilot in a diabetes clinic with alert burden and time in range as outcomes."],
         ], size=13, row_h=0.72),
-        Text(0.9, 6.0, 11.5, "Impact: fewer hours above range, earlier review of cardiac drift, and conversations about change grounded in the patient's own physiology.", 14, INK, serif=True, italic=True),
+        Text(0.9, 5.85, 11.5, "Impact: fewer hours above range, earlier review of cardiac drift, and conversations about change grounded in the patient's own physiology.", 14, INK, serif=True, italic=True),
+        Text(0.9, 6.55, 11.5, "Code: <public repository URL>.  Demo video: <unlisted YouTube URL>.  Thank you.", 13, INK2),
     ]))
 
-    S.append(Slide("Team", "Contact", [
-        Table(0.9, 1.9, [3.6, 3.6, 4.4], [
-            ["Name", "Role", "Email"],
-            ["<Member 1>", "<Role>", "<email>"],
-            ["<Member 2>", "<Role>", "<email>"],
-            ["<Member 3>", "<Role>", "<email>"],
-            ["<Member 4>", "<Role>", "<email>"],
-        ], size=14, row_h=0.6),
-        Text(0.9, 5.4, 11.5, "<CollegeName> / <Incubator>.  Code: <public repository URL>.  Demo video: <unlisted YouTube URL>.", 14, INK2),
-        Text(0.9, 6.3, 11.5, "Thank you.", 22, INK, serif=True),
-    ]))
     return S
 
 

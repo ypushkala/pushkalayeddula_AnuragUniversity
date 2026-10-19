@@ -20,6 +20,8 @@ Seed `20260315` drives everything. Two runs produce byte identical wearable file
 | Breton and Kovatchev, J Diabetes Sci Technol 2008 | CGM error model parameters (via simglucose) | Published | No |
 | ICD-10 (WHO), LOINC (Regenstrief), WHO ATC, dbSNP and HGNC identifiers | Codes inside the FHIR bundles | Free to use codes (LOINC licence permits use of codes) | No |
 | IBM Plex Sans and Serif | Typefaces for the dashboard, charts, slides and PDF note | SIL Open Font License 1.1 (`assets/fonts/OFL.txt`) | No |
+| Noto Sans Devanagari and Tamil (via Fontsource) | Hindi and Tamil text in the patient view | SIL Open Font License 1.1 | No |
+| CGMacros v1.0.0 (Gutierrez-Osuna, Kerr, Mortazavi, Das; PhysioNet 2025) | Validation of forecasts on real CGM traces only; never used for training | CC BY-NC-SA 4.0, open access | No (anyone can download under the licence terms) |
 
 ### Why not Synthea itself
 
@@ -105,3 +107,13 @@ Time is stored as minutes since 14 Feb 2026 00:00 IST.
 ## Privacy
 
 There is no personal data in this project, so the Digital Personal Data Protection Act 2023 and HIPAA do not apply to it. We still built the record as a real deployment would need: a FHIR `Consent` resource per patient modelled on a DPDP consent artefact (purpose: treatment; time bound; revocable), no identifiers in any model feature, and an architecture that keeps inference inside the hospital network. See `docs/MODEL_CARD.md`.
+
+## Real data used for validation: CGMacros
+
+CGMacros is an open access PhysioNet dataset of 45 adults in the United States (15 normoglycaemic, 16 with prediabetes, 14 with Type 2 diabetes by HbA1c) who wore a Dexcom G6 and a FreeStyle Libre Pro, plus a Fitbit, for about ten days while logging meals with known macronutrients. It is released under CC BY-NC-SA 4.0 with no credentialing or data use agreement.
+
+* `scripts/fetch_cgmacros.sh` downloads the archive from PhysioNet's open data mirror, checks it against the published SHA-256, and extracts only the CSV files (no meal photos) into `data/external/` (gitignored).
+* The data are used only for non commercial evaluation in `prativimb/eval/real_data.py`. They are not redistributed and no model is trained on them; only aggregate metrics (`reports/real_data.md`, `reports/real_data.json`) are committed.
+* Mapping: Dexcom readings sampled every 5 minutes; Fitbit METs, intensity levels or steps mapped to steps per minute; meal carbohydrate scaled by the share eaten; weight converted from pounds. No sleep or medication data exist, so those features are missing and the twin uses defaults.
+
+Citation: Gutierrez-Osuna R, Kerr D, Mortazavi B, Das A. CGMacros: a scientific dataset for personalized nutrition and diet monitoring (version 1.0.0). PhysioNet, 2025. https://doi.org/10.13026/3z8q-x658. Please also cite the original publication by Das, Kerr, Glanz, Bevier, Santiago, Gutierrez-Osuna and Mortazavi, and the PhysioNet platform (Pollard et al., Nature Health 2026).

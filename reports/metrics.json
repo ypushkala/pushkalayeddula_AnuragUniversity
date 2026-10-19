@@ -464,6 +464,135 @@
    "dips": 235
   }
  },
+ "real_data": {
+  "participants": 45,
+  "by_group": {
+   "all": {
+    "participants": 45,
+    "origins": 34102,
+    "30": {
+     "persist": 19.690064093105523,
+     "phys": 22.265570038704023,
+     "ml": 19.89947227684679,
+     "hyb": 19.32240608492254,
+     "known": 20.6956052249709
+    },
+    "60": {
+     "persist": 28.59924935633928,
+     "phys": 32.06532750115892,
+     "ml": 28.955048511317766,
+     "hyb": 29.461407977824884,
+     "known": 26.074029280600108
+    },
+    "120": {
+     "persist": 38.27025683131249,
+     "phys": 38.4482018927926,
+     "ml": 38.55202362731247,
+     "hyb": 36.72725713189981,
+     "known": 29.584683653032716
+    }
+   },
+   "T2D": {
+    "participants": 14,
+    "origins": 10603,
+    "30": {
+     "persist": 22.179427844968057,
+     "phys": 24.135404869081725,
+     "ml": 21.21819090620722,
+     "hyb": 21.083188400245863,
+     "known": 22.16785901457474
+    },
+    "60": {
+     "persist": 34.73803406445729,
+     "phys": 37.785951256392536,
+     "ml": 32.648045733717865,
+     "hyb": 34.507767897026056,
+     "known": 30.573327181164704
+    },
+    "120": {
+     "persist": 48.61842717456676,
+     "phys": 48.830271345364,
+     "ml": 48.433191282742676,
+     "hyb": 46.29910616769003,
+     "known": 37.07757442419233
+    }
+   },
+   "normoglycaemia": {
+    "participants": 15,
+    "origins": 11895,
+    "30": {
+     "persist": 17.29494052093189,
+     "phys": 22.053408828240496,
+     "ml": 19.147763266034296,
+     "hyb": 18.819532570126704,
+     "known": 21.55680984412536
+    },
+    "60": {
+     "persist": 22.500232798578878,
+     "phys": 26.977321461718194,
+     "ml": 27.30710332808484,
+     "hyb": 25.256115799755843,
+     "known": 24.509623169391297
+    },
+    "120": {
+     "persist": 28.270307570583604,
+     "phys": 29.20438678033545,
+     "ml": 33.180966435644436,
+     "hyb": 28.885765754620987,
+     "known": 25.240440998251582
+    }
+   },
+   "prediabetes": {
+    "participants": 16,
+    "origins": 11604,
+    "30": {
+     "persist": 19.57694824848182,
+     "phys": 20.637546558463136,
+     "ml": 19.402964260851178,
+     "hyb": 18.107285619718365,
+     "known": 18.249920074582743
+    },
+    "60": {
+     "persist": 27.96607356489372,
+     "phys": 31.159843393234446,
+     "ml": 26.931511795544306,
+     "hyb": 28.43927862482274,
+     "known": 22.972405609397764
+    },
+    "120": {
+     "persist": 36.39929431043379,
+     "phys": 35.9300788474336,
+     "ml": 33.086745812969106,
+     "hyb": 33.9069846390134,
+     "known": 25.737269387051782
+    }
+   }
+  },
+  "conformal": {
+   "30": {
+    "synthetic_calibration": 0.8250643776824035,
+    "synthetic_width": 41.24282716476665,
+    "site_recalibrated": 0.8795994277539342,
+    "site_width": 50.998309256904236
+   },
+   "60": {
+    "synthetic_calibration": 0.8177345537757437,
+    "synthetic_width": 59.777770513042256,
+    "site_recalibrated": 0.8667620137299771,
+    "site_width": 73.43640841103247
+   },
+   "120": {
+    "synthetic_calibration": 0.7819815694579589,
+    "synthetic_width": 68.25981332414915,
+    "site_recalibrated": 0.8831778375593842,
+    "site_width": 98.04427310570901
+   }
+  },
+  "calibration_split": {
+   "calibration_participants": 22,
+   "test_participants": 23
+  }
+ },
  "conformal": {
   "30": {
    "cqr_coverage": 0.8984052855179308,
@@ -675,7 +804,9 @@
   "All data are synthetic. The ground truth simulator (UVA/Padova based) is more complex than the twin, but it is still a model; real patients have behaviours and sensor artefacts we did not simulate. These numbers show the method works end to end; they are not evidence of clinical performance.",
   "Cardiovascular events are a synthetic composite driven by a latent strain process. With 6 events among test patients the confidence intervals are wide, and the supervised model has learned the shape of our simulated prodrome. Prospective validation on real outcomes would be required.",
   "Conformal coverage assumes exchangeability. Readings within a patient are serially correlated, so the guarantee is approximate; coverage is lower in the hypoglycaemic range, where data are scarce.",
-  "Spike alerts depend on the declared routine. Unlogged or unplanned meals are the main source of missed spikes and wide intervals.",
+  "Spike alerts depend on the declared routine. Unlogged or unplanned meals are the main source of missed spikes and wide intervals; the planned meal input addresses this when it is used.",
+  "On real CGM traces (CGMacros, 45 people) models trained only on synthetic data perform at about persistence level; the twin is clearly better only when meals are announced. Twin forecasts start from the observer estimate rather than the last reading, which costs accuracy at 30 minutes. Local retraining and per site conformal recalibration are needed before any deployment.",
+  "Low glucose forecasting flags 37% of lows in advance with a short median lead; most lows in this cohort are brief level 1 dips in people without diabetes.",
   "The dawn phenomenon amplitude was not identifiable from seven days for most patients and usually fits to zero.",
   "Decision support only. Nothing here is a diagnosis or a treatment recommendation."
  ]

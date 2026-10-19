@@ -30,17 +30,27 @@ class Prior:
     sd: np.ndarray  # log scale sd for LOG params, absolute sd otherwise
 
 
+def _val(ehr: dict, key: str, default: float) -> float:
+    """EHR value, or a population default when the record is missing it."""
+    v = ehr.get(key, default)
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return default
+    return v if np.isfinite(v) else default
+
+
 def ehr_prior(ehr: dict) -> Prior:
-    a1c = float(ehr.get("hba1c", 5.5))
+    a1c = _val(ehr, "hba1c", 5.5)
     x = float(np.clip((a1c - 5.2) / 4.0, 0, 1.4))
-    bmi = float(ehr.get("bmi", 24))
-    t2d = bool(ehr.get("t2d", 0))
-    tcf = float(ehr.get("tcf7l2_risk", 0) or 0)
-    age = float(ehr.get("age", 50))
+    bmi = _val(ehr, "bmi", 24.0)
+    t2d = bool(_val(ehr, "t2d", 0))
+    tcf = _val(ehr, "tcf7l2_risk", 0.0)
+    age = _val(ehr, "age", 50.0)
     mean = np.array([
         6e-4 * np.exp(-1.4 * x - 0.03 * (bmi - 24)),          # SI
         0.018 * np.exp(-0.5 * x),                              # SG
-        float(ehr.get("fpg", 95)),                             # Gb
+        _val(ehr, "fpg", 95.0 + 25.0 * x),                     # Gb
         0.03 * (0.85 if t2d else 1.0) * (1 - 0.003 * (age - 50)),  # ka
         0.05 * np.exp(-1.0 * x) * (1 - 0.08 * tcf),            # gamma
         0.12 if t2d else 0.03,                                 # dawn
@@ -59,15 +69,15 @@ def from_z(z: np.ndarray) -> np.ndarray:
     return np.where(LOG, np.exp(np.where(LOG, z, 0.0)), z)
 
 
-def _origins(s: Series) -> np.ndarray:
-    ks = np.arange(PER_DAY // 4, config.CALIBRATION_DAYS * PER_DAY - H_CAL, 24)
+def _origins(s: Series, days: int) -> np.ndarray:
+    ks = np.arange(PER_DAY // 4, days * PER_DAY - H_CAL, 24)
     return ks[~np.isnan(s.cgm[ks])]
 
 
-def calibrate(s: Series, prior: Prior | None = None, max_nfev: int = 40) -> tuple[np.ndarray, dict]:
+def calibrate(s: Series, prior: Prior | None = None, max_nfev: int = 40, days: int | None = None) -> tuple[np.ndarray, dict]:
     prior = prior or ehr_prior(s.ehr)
     pp = forecast.prepare(s)
-    ks = _origins(s)
+    ks = _origins(s, days or config.CALIBRATION_DAYS)
     u, obs = forecast.build(pp, ks, H_CAL, future="actual")
     y = forecast._take(s.cgm, ks[:, None] + np.arange(1, H_CAL + 1)[None, :], np.nan)
     mask = ~np.isnan(y)

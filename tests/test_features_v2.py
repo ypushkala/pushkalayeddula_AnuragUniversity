@@ -79,3 +79,10 @@ def test_levers_are_ranked_and_24h_scope_changes_every_meal(client):
     day = client.post("/api/patients/PTV-0001/whatif", json={"walk_minutes": 15, "scope": "all", "horizon_h": 24}).json()
     assert day["meals_changed"] >= 2 and len(day["times"]) == 24 * 12 + 1
     assert day["delta"]["auc_above_180"] < 0
+
+
+@needs_data
+@needs_models
+def test_moved_meal_reports_its_new_time(client):
+    r = client.post("/api/patients/PTV-0001/whatif", json={"shift_hours": -1}).json()
+    assert r["target_meal"]["new_time"] < r["target_meal"]["time"]

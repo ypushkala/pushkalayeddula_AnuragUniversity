@@ -78,3 +78,15 @@ Produces `data/raw/` (FHIR style EHR bundles, device style exports for hero pati
 * Alert design changed during evaluation: a 90% lower bound alone caught only 44% of spikes with 25 minutes' notice, so the deployed design has two tiers (watch on the point forecast, alert on the lower bound of the 50% interval chosen on calibration patients).
 * Storyline deviation: for Ramesh at 19:45 the twin finds that an earlier dinner does not lower tonight's peak (lunch glucose has not settled; the ground truth agrees). The demo uses a post dinner walk and a millet swap instead, and shows the twin saying no to the earlier dinner.
 * Synthea itself was not used: its modules are calibrated to the United States. A Synthea style Python generator emits FHIR R4 bundles with Indian diet, calendar and genetics instead (see docs/DATA.md).
+
+## Version 1.1 improvements
+
+- [x] Planned and eaten meals entered from the dashboard change the twin's prior and the features immediately.
+- [x] Acknowledge and snooze alerts, with an append only audit log.
+- [x] Real data validation on CGMacros (open access, PhysioNet): `make realdata`, `reports/real_data.md`.
+- [x] Levers ranked per patient; what-if over 24 hours across every main meal.
+- [x] Low glucose as its own event: compression artefact filter (validated against injected dips) and a classifier.
+- [x] Ward: since you last looked, keyboard navigation, compact rows, sticky header.
+- [x] Patient view in English, Hindi and Tamil with print and WhatsApp sharing (translations marked for review).
+- [x] Phone and tablet layouts, skeletons, band explained in words, a table twin for every chart.
+- [x] axe-core audit clean for WCAG 2.1 A and AA on every screen, light and dark.

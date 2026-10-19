@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
     task.cancel()
 
 
-app = FastAPI(title="Prativimb API", version="1.0.0", lifespan=lifespan,
+app = FastAPI(title="Prativimb API", version="1.1.0", lifespan=lifespan,
               description="Hybrid patient digital twin (synthetic data). Decision support only, not a diagnosis.")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 

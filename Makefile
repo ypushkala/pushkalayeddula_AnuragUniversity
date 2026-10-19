@@ -2,7 +2,7 @@
 PY ?= .venv/bin/python
 NPM ?= npm
 
-.PHONY: help setup data twin train report all test api web build-web serve screenshots docs check demo docker-up clean
+.PHONY: help setup data twin train report all test api web build-web serve screenshots docs check a11y realdata demo docker-up clean
 
 help:
 	@echo "setup        create .venv (Python 3.11), install Python and dashboard dependencies"
@@ -16,6 +16,8 @@ help:
 	@echo "screenshots  capture every screen into docs/screenshots (needs api and web)"
 	@echo "docs         architecture diagram and slides (PPTX and PDF) from the latest metrics"
 	@echo "check        fail if any em dash, en dash or emoji is in the repository"
+	@echo "a11y         axe-core accessibility audit of every screen (needs make serve)"
+	@echo "realdata     download CGMacros (open access, PhysioNet) and validate on real CGM traces"
 	@echo "docker-up    one command start with Docker Compose (dashboard on :8080)"
 
 setup:
@@ -60,6 +62,14 @@ docs:
 
 check:
 	$(PY) scripts/check_style.py
+
+a11y:
+	$(PY) scripts/a11y_audit.py
+
+realdata:
+	sh scripts/fetch_cgmacros.sh
+	$(PY) -m prativimb.eval.real_data
+	$(PY) -m prativimb.pipeline report
 
 demo: all build-web
 	PRATIVIMB_SPEED=10 $(PY) -m uvicorn prativimb.api.main:app --host 127.0.0.1 --port 8000

@@ -1,4 +1,4 @@
-# Model card: Prativimb hybrid patient twin, version 1.0
+# Model card: Prativimb hybrid patient twin, version 1.1
 
 > Decision support only, not a diagnosis. Every forecast, flag and simulation needs a clinician's judgement.
 
@@ -9,7 +9,7 @@ The same content, with live numbers, is on the dashboard at `/model`. Full metri
 | | |
 |---|---|
 | Developers | `<TeamName>`, `<CollegeName>` |
-| Version | 1.0, October 2026 |
+| Version | 1.1, October 2026 |
 | Type | Hybrid: mechanistic ODE twin per patient, gradient boosted residual model, conformal intervals; separate cardiovascular ensemble |
 | Code | `prativimb/twin/` (twin), `prativimb/ml/` (residual, conformal, cardio, explanations) |
 | Licence | MIT |
@@ -22,7 +22,9 @@ The same content, with live numbers, is on the dashboard at `/model`. Full metri
 3. **Residual model.** LightGBM per horizon (30, 60, 90, 120 min) predicts the twin's error from CGM history and trend, logged and expected meals, steps and heart rate, completed sleep, medication adherence, EHR covariates and twin parameters.
 4. **Uncertainty.** Conformalised quantile regression (Romano, Patterson and Candes 2019), written by hand in `prativimb/ml/conformal.py`, calibrated on 40 held out patients. The display band is 90%. The alert tier uses the lower bound of the 50% interval, a level chosen on calibration patients as the most sensitive one with at most 0.10 false alarms per patient day.
 5. **Cardiovascular ensemble.** Seven day wearable windows (resting heart rate, nightly RMSSD, sleep architecture, awakenings, efficiency, steps) with per patient baseline z scores; isolation forest and a composite z score (unsupervised), LightGBM (supervised on synthetic episodes), stacked by logistic regression on calibration patients. Operating threshold at 95% specificity on calibration patients.
-6. **Explanations.** Exact Shapley values over six twin inputs (upcoming meal, recent meals, activity, sleep and shift, medication, personal physiology) plus TreeSHAP of the residual model, both in mg/dL of predicted peak, worded as one clinical sentence. Cardiovascular factors are SHAP values grouped by measure and worded against the patient's own baseline.
+6. **Low glucose model.** LightGBM classifier for glucose below 70 mg/dL within 60 minutes (two consecutive readings), trained on labels cleaned by a compression artefact filter; threshold 0.95 chosen on calibration patients for at most 0.25 false alarms per patient day. A fast fall during sleep is shown as probable sensor compression, not as a low.
+7. **Clinician input.** Planned meals replace the routine slot in the twin's prior and in the features; eaten meals join the log. Alert acknowledgements quieten an alert for a chosen period. Both are kept with an audit trail.
+8. **Explanations.** Exact Shapley values over six twin inputs (upcoming meal, recent meals, activity, sleep and shift, medication, personal physiology) plus TreeSHAP of the residual model, both in mg/dL of predicted peak, worded as one clinical sentence. Cardiovascular factors are SHAP values grouped by measure and worded against the patient's own baseline.
 
 ## Intended use
 
@@ -73,6 +75,26 @@ Clarke error grid, hybrid: zone A 94.2% (30 min), 85.4% (60 min), 79.3% (120 min
 | 90 min | 88.7% | 57 mg/dL |
 | 120 min | 88.7% | 64 mg/dL |
 
+### Low glucose
+
+| Policy | Lows | Flagged in advance | Precision | Median lead | False alarms per patient day |
+|---|---:|---:|---:|---:|---:|
+| Low glucose classifier | 720 | 37% | 61% | 10 min | 0.19 |
+| Point forecast below 70 | 720 | 18% | 68% | 18 min | 0.07 |
+
+Compression artefact filter against injected dips: 144 of 235 found, 63% of flagged readings are true artefacts.
+
+### Real CGM traces (CGMacros, 45 participants)
+
+| Model | RMSE 30 min | RMSE 60 min | RMSE 120 min |
+|---|---:|---:|---:|
+| Persistence | 19.7 | 28.6 | 38.3 |
+| Twin, routine prior | 22.3 | 32.1 | 38.4 |
+| Hybrid, synthetic trained | 19.3 | 29.5 | 36.7 |
+| **Twin, meals announced** | **20.7** | **26.1** | **29.6** |
+
+90% interval coverage on real data: 83% to 78% with synthetic calibration; 87% to 88% after refitting the conformal margin on half the participants. See `reports/real_data.md`.
+
 ### Cardiovascular risk flag (Event B)
 
 675 windows, 17 positive (event in the next 3 days), 6 distinct events, prevalence 2.5%. Patient level bootstrap 95% intervals.
@@ -97,6 +119,8 @@ At the operating threshold (6.9% risk): specificity 94.4%, 5 of 6 events flagged
 
 * Synthetic ground truth is still a model; these numbers show the method works end to end, not clinical performance.
 * Only 6 cardiovascular events among test patients; intervals are wide and the supervised model has learned our simulated prodrome.
+* On real traces, models trained only on synthetic data perform at about persistence level; local retraining and per site conformal recalibration are prerequisites for deployment. Twin forecasts start from the observer estimate rather than the last reading, which costs accuracy at 30 minutes.
+* Low glucose forecasting has a short median lead and modest sensitivity; most lows here are brief level 1 dips in people without diabetes.
 * Conformal guarantees assume exchangeability; within patient correlation makes coverage approximate, and it is lower below 70 mg/dL.
 * Forecasts rely on the declared routine; unlogged and unplanned meals are the main source of error.
 * The dawn amplitude is usually not identifiable from one week and fits to zero.

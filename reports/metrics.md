@@ -90,18 +90,24 @@ Operating point (threshold set at 95% specificity on calibration patients): test
 
 Median in sample error over the calibration week fell from 28.3 mg/dL (EHR prior only) to 19.9 mg/dL after wearable calibration, across 200 patients. Calibration takes about one second per patient.
 
-## 4. Evaluation design
+## 4. Real CGM traces (CGMacros)
+
+On 45 real participants (open access CGMacros, Dexcom G6), the calibrated twin told about each meal in advance reached a 2 hour RMSE of 29.6 mg/dL against 38.3 for persistence. Models trained only on synthetic data transfer at about persistence level (36.7). Synthetic calibrated intervals under cover on real data (78% at 2 hours) and recover to 88% once the conformal margin is refitted on local participants. Full results: [real_data.md](real_data.md).
+
+## 5. Evaluation design
 
 * Patient level split: 120 train, 40 calibration, 40 test. No patient contributes to more than one split. The three demo patients are in the test split.
 * Twin parameters use only days 1 to 7 of each patient; every forecast is scored on days 8 to 30.
 * Forecasts use only information available at the origin. Future meals come from the routine the patient declared at enrolment, not from the meal log.
 * Early stopping uses a validation slice of training patients.
 
-## 5. Limitations
+## 6. Limitations
 
 * All data are synthetic. The ground truth simulator (UVA/Padova based) is more complex than the twin, but it is still a model; real patients have behaviours and sensor artefacts we did not simulate. These numbers show the method works end to end; they are not evidence of clinical performance.
 * Cardiovascular events are a synthetic composite driven by a latent strain process. With 6 events among test patients the confidence intervals are wide, and the supervised model has learned the shape of our simulated prodrome. Prospective validation on real outcomes would be required.
 * Conformal coverage assumes exchangeability. Readings within a patient are serially correlated, so the guarantee is approximate; coverage is lower in the hypoglycaemic range, where data are scarce.
-* Spike alerts depend on the declared routine. Unlogged or unplanned meals are the main source of missed spikes and wide intervals.
+* Spike alerts depend on the declared routine. Unlogged or unplanned meals are the main source of missed spikes and wide intervals; the planned meal input addresses this when it is used.
+* On real CGM traces (CGMacros, 45 people) models trained only on synthetic data perform at about persistence level; the twin is clearly better only when meals are announced. Twin forecasts start from the observer estimate rather than the last reading, which costs accuracy at 30 minutes. Local retraining and per site conformal recalibration are needed before any deployment.
+* Low glucose forecasting flags 37% of lows in advance with a short median lead; most lows in this cohort are brief level 1 dips in people without diabetes.
 * The dawn phenomenon amplitude was not identifiable from seven days for most patients and usually fits to zero.
 * Decision support only. Nothing here is a diagnosis or a treatment recommendation.
