@@ -136,7 +136,7 @@ docker compose up --build
 # dashboard: http://localhost:8080   API: http://localhost:8000/docs
 ```
 
-The API image generates the data and trains every model at build time (about 6 minutes), so every build gives the same numbers.
+The API image generates the data and trains every model at build time, so the container starts in seconds. The first build takes about 20 to 25 minutes (dependency install about 3 minutes, pipeline about 18 minutes in a 4 GB Docker Desktop VM); rebuilds reuse the cached layers. Verified: glucose metrics are identical to the local run; cardiovascular metrics can differ in the third decimal across operating systems (LightGBM and isolation forest arithmetic).
 
 ### Without Docker
 

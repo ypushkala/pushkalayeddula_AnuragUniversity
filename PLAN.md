@@ -15,59 +15,66 @@ Prativimb is a hybrid patient digital twin for Indian Type 2 diabetes and cardio
 
 ### 1. Data generation
 Produces `data/raw/` (FHIR style EHR bundles, device style exports for hero patients) and `data/processed/` (canonical parquet) plus `data/prativimb.duckdb`.
-- [ ] `make data` regenerates everything from the seed in under 3 minutes.
-- [ ] Two runs give identical file hashes.
-- [ ] Glucose summaries are plausible per phenotype (healthy fasting 80 to 100, T2D post meal peaks 200 to 300 mg/dL).
-- [ ] Hero stories visible in raw data: Ramesh post dinner spike, Fatima late fast low and post iftar rebound, Suresh HRV decline before the 13 Mar event.
-- [ ] Device adapters round trip Apple Health and Google Fit style records.
+- [x] `make data` regenerates everything from the seed in under 3 minutes (about 20 s).
+- [x] Two runs give identical file hashes.
+- [x] Glucose summaries are plausible per phenotype (healthy fasting 80 to 100, T2D post meal peaks 200 to 300 mg/dL).
+- [x] Hero stories visible in raw data: Ramesh post dinner spike, Fatima late fast low and post iftar rebound, Suresh HRV decline before the 13 Mar event.
+- [x] Device adapters round trip Apple Health and Google Fit style records.
 
 ### 2. Twin model
 `prativimb/twin/`: extended Bergman model, EHR priors, wearable calibration, observer, scenario simulation.
-- [ ] Steady state holds with no inputs; meal raises glucose and it returns to basal.
-- [ ] Batch RK4 integrator agrees with `scipy.integrate.solve_ivp` within 1 mg/dL.
-- [ ] Calibration recovers known parameters from twin generated data.
-- [ ] Calibrated twin beats the EHR only (cold start) twin on held out days.
+- [x] Steady state holds with no inputs; meal raises glucose and it returns to basal.
+- [x] Batch RK4 integrator agrees with `scipy.integrate.solve_ivp` within 1 mg/dL.
+- [x] Calibration recovers known parameters from twin generated data.
+- [x] Calibrated twin beats the EHR only (cold start) twin on held out days.
 
 ### 3. Residual ML and conformal
 `prativimb/ml/glucose.py`, `prativimb/ml/conformal.py`.
-- [ ] Physics only, ML only and hybrid models trained at 30, 60, 90, 120 min.
-- [ ] Hybrid RMSE below both ablations at every horizon.
-- [ ] Normalised split conformal intervals reach 90% (plus or minus 2 points) coverage on test patients.
+- [x] Physics only, ML only and hybrid models trained at 30, 60, 90, 120 min.
+- [x] Hybrid RMSE below both ablations at every horizon.
+- [x] Conformal intervals reach 90% (plus or minus 2 points) coverage on test patients. Implemented as conformalised quantile regression (88.7% to 89.8%).
 
 ### 4. Cardio model
 `prativimb/ml/cardio.py`.
-- [ ] Isolation forest, per patient z score composite, LightGBM classifier and stacked ensemble.
-- [ ] Daily risk trajectory and top factors stored for every patient day.
-- [ ] Suresh is flagged at least 3 days before his event.
+- [x] Isolation forest, per patient z score composite, LightGBM classifier and stacked ensemble.
+- [x] Daily risk trajectory and top factors stored for every patient day.
+- [x] Suresh is flagged at least 3 days before his event (flagged 9 Mar, event 13 Mar).
 
 ### 5. Evaluation report
 `reports/metrics.md`, `reports/metrics.json`, `reports/figures/`.
-- [ ] RMSE and MARD at 30/60/120 min, Clarke zones, spike sensitivity, precision, median lead time, false alarms per patient day, ablation table.
-- [ ] Cardio AUROC, AUPRC, sensitivity at 90% specificity with bootstrap intervals, calibration plot.
-- [ ] Conformal coverage and width by horizon. Limitations written out.
+- [x] RMSE and MARD at 30/60/120 min, Clarke zones, spike sensitivity, precision, median lead time, false alarms per patient day, ablation table.
+- [x] Cardio AUROC, AUPRC, sensitivity at 90% specificity with bootstrap intervals, calibration plot.
+- [x] Conformal coverage and width by horizon. Limitations written out.
 
 ### 6. API and streaming
 `prativimb/api/`.
-- [ ] Endpoints for ward, patient, forecast, what-if, cardio, note (JSON and PDF), model card, FHIR bundle.
-- [ ] WebSocket replay pushes readings as the demo clock advances; the clock can be paused and set.
-- [ ] pytest API tests pass.
+- [x] Endpoints for ward, patient, forecast, what-if, cardio, note (JSON and PDF), model card, FHIR bundle.
+- [x] WebSocket replay pushes readings as the demo clock advances; the clock can be paused and set.
+- [x] pytest API tests pass.
 
 ### 7. Dashboard
 `frontend/` (React, TypeScript, Vite, Observable Plot).
-- [ ] Ward, patient twin, what-if, cardio week, clinical note, model card screens all render against the live API.
-- [ ] Light and dark mode. Serif headings, sans data, tabular numerals. Red only for alerts.
-- [ ] `npm run build` passes with no type errors.
+- [x] Ward, patient twin, what-if, cardio week, clinical note, model card screens all render against the live API.
+- [x] Light and dark mode. Serif headings, sans data, tabular numerals. Red only for alerts.
+- [x] `npm run build` passes with no type errors.
 
 ### 8. Docs and slides
-- [ ] README with every mandatory section in the required order.
-- [ ] `docs/architecture.pdf` and `.png` generated from code.
-- [ ] `docs/presentation.pptx` and `.pdf` (13 to 15 slides) with charts from the actual run.
-- [ ] `docs/DATA.md`, `docs/MODEL_CARD.md`, `docs/VIDEO_SCRIPT.md` (20 minutes, timed).
+- [x] README with every mandatory section in the required order.
+- [x] `docs/architecture.pdf` and `.png` generated from code.
+- [x] `docs/presentation.pptx` and `.pdf` (13 to 15 slides) with charts from the actual run.
+- [x] `docs/DATA.md`, `docs/MODEL_CARD.md`, `docs/VIDEO_SCRIPT.md` (20 minutes, timed).
 
 ### 9. Screenshots
-- [ ] Playwright captures every screen, light mode plus one dark mode, into `docs/screenshots/`.
+- [x] Playwright captures every screen, light mode plus one dark mode, into `docs/screenshots/`.
 
 ### 10. Final polish
-- [ ] All tests pass, metrics regenerated, slides rebuilt with the final numbers.
-- [ ] `scripts/check_style.py` finds no em dashes, en dashes or emoji anywhere in the repo.
-- [ ] README section checklist confirmed.
+- [x] All tests pass, metrics regenerated, slides rebuilt with the final numbers.
+- [x] `scripts/check_style.py` finds no em dashes, en dashes or emoji anywhere in the repo.
+- [x] README section checklist confirmed.
+
+## Outcome notes
+
+* Every stage ran end to end; `make all` takes about 5 minutes, `make test` runs 28 tests.
+* Alert design changed during evaluation: a 90% lower bound alone caught only 44% of spikes with 25 minutes' notice, so the deployed design has two tiers (watch on the point forecast, alert on the lower bound of the 50% interval chosen on calibration patients).
+* Storyline deviation: for Ramesh at 19:45 the twin finds that an earlier dinner does not lower tonight's peak (lunch glucose has not settled; the ground truth agrees). The demo uses a post dinner walk and a millet swap instead, and shows the twin saying no to the earlier dinner.
+* Synthea itself was not used: its modules are calibrated to the United States. A Synthea style Python generator emits FHIR R4 bundles with Indian diet, calendar and genetics instead (see docs/DATA.md).

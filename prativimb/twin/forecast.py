@@ -84,10 +84,14 @@ def prepare(s: Series, **kw) -> Prepared:
 
 
 def expected_meals(pp: Prepared, k0: int, H: int) -> list[tuple[int, float, float, str]]:
-    """(step offset from origin, carbs, absorption factor, slot name) for meals not yet eaten."""
+    """(step offset from origin, carbs, absorption factor, slot name) for meals not yet eaten.
+
+    A meal the clinician or patient has planned replaces the routine slot within two hours of it.
+    """
     s = pp.s
     t = k0 * STEP
     out = []
+    planned = pp.extra.get("planned", [])
     for d in (t // 1440 - 1, t // 1440, t // 1440 + 1):
         plan = day_plan(s.declared, int(d)) if 0 <= d < config.N_DAYS else "normal"
         for minute, carbs, kind, name in s.routine.get(plan) or s.routine.get("normal", []):
@@ -96,13 +100,24 @@ def expected_meals(pp: Prepared, k0: int, H: int) -> list[tuple[int, float, floa
             T = d * 1440 + minute
             if T < t - 45 or T > t + H * STEP:
                 continue
+            if any(abs(T - pm) <= 120 for pm, *_ in planned):
+                continue
             lo, hi = np.searchsorted(pp.meal_minutes, [T - 75, t + 0.5])
             if lo < hi and pp.meal_carbs[lo:hi].max() >= 0.4 * carbs:
                 continue
             j = int(max(T - t, STEP) // STEP)
             if j < H:
                 out.append((j, carbs, AF.get(kind, 1.0), name))
-    return out
+    for m, g, a, name in planned:
+        if m < t - 45 or m > t + H * STEP:
+            continue
+        lo, hi = np.searchsorted(pp.meal_minutes, [m - 75, t + 0.5])
+        if lo < hi and pp.meal_carbs[lo:hi].max() >= 0.4 * g:
+            continue
+        j = int(max(m - t, STEP) // STEP)
+        if j < H:
+            out.append((j, g, a, name))
+    return sorted(out)
 
 
 def expected_doses(pp: Prepared, k0: int, H: int) -> list[int]:
@@ -197,17 +212,24 @@ class Scenario:
     missed_dose: bool = False
     sleep_hours: float | None = None
     night_shift: bool = False
+    scope: str = "next"   # "next": the next main meal; "all": every main meal in the horizon
 
     def is_baseline(self) -> bool:
-        return self == Scenario()
+        return self == Scenario(scope=self.scope)
 
 
-def _target_meal(u: bergman.Inputs) -> int | None:
-    fut = np.flatnonzero(u.carbs[0, W:] >= MAIN_MEAL_G)
-    if len(fut):
-        return W + int(fut[0])
-    past = np.flatnonzero(u.carbs[0, W - 18: W] >= MAIN_MEAL_G)
-    return W - 18 + int(past[-1]) if len(past) else None
+def _future_meals(u: bergman.Inputs) -> list[list]:
+    cols = np.flatnonzero(u.carbs[0, W:] > 0) + W
+    return [[int(c), float(u.carbs[0, c]), float(u.af[0, c])] for c in cols]
+
+
+def _write_future(u: bergman.Inputs, meals: list[list]) -> None:
+    base = float(u.af[0, W - 1])
+    u.carbs[0, W:] = 0.0
+    u.af[0, W:] = base
+    for c, g, a in sorted(meals):
+        u.carbs[0, c] += g
+        u.af[0, c:] = a
 
 
 def apply_scenario(pp: Prepared, k: int, H: int, sc: Scenario):
@@ -216,37 +238,46 @@ def apply_scenario(pp: Prepared, k: int, H: int, sc: Scenario):
     if sc.sleep_hours is not None or sc.night_shift:
         hours = s.sleep_hours.copy()
         if sc.sleep_hours is not None:
-            # "What if the last three nights had been this long": the debt the twin uses spans three nights.
+            # "What if the last three nights (and tonight) had been this long": the twin's debt spans three nights.
             last = min((k * STEP) // 1440, config.N_DAYS - 1)
-            hours[max(0, last - 2): last + 1] = sc.sleep_hours
+            hours[max(0, last - 2): last + 2] = sc.sleep_hours
         smod, _ = modifier_grids(s, sleep_hours=hours, force_night=sc.night_shift)
         pp = Prepared(**{**pp.__dict__, "smod": smod})
     u, obs = build(pp, np.array([k]), H)
     x0 = initial_state(obs, float(s.on_metformin))
-    info = {"target_step": None, "target_carbs": None}
-    c = _target_meal(u)
-    if c is not None:
-        g = float(u.carbs[0, c])
-        info.update(target_step=c - W, target_carbs=g)
-        factor, a_new = SWAPS.get(sc.swap, (1.0, None))
-        a_meal = float(u.af[0, c]) if a_new is None else a_new
-        new_c = c
-        if sc.shift_hours and c >= W:
-            new_c = int(np.clip(c + round(sc.shift_hours * 60 / STEP), W + 1, W + H - 1))
-        if new_c != c or factor != 1.0 or a_new is not None:
-            u.carbs[0, c] -= g
-            nxt = np.flatnonzero(u.carbs[0, c + 1:] > 0)
-            seg_end = c + 1 + int(nxt[0]) if len(nxt) else W + H
-            prev_af = float(u.af[0, c - 1]) if c > 0 else 1.0
-            u.af[0, c:seg_end] = prev_af
-            u.carbs[0, new_c] += g * factor
-            nxt = np.flatnonzero(u.carbs[0, new_c + 1:] > 0)
-            seg_end = new_c + 1 + int(nxt[0]) if len(nxt) else W + H
-            u.af[0, new_c:seg_end] = a_meal
-        info["meal_step"] = new_c - W
-        if sc.walk_minutes:
-            start = max(new_c + 2, W)
-            u.A[0, start: start + int(np.ceil(sc.walk_minutes / STEP))] = 1.0
+    names = {W + j: name for j, g, a, name in expected_meals(pp, k, H)}
+    meals = _future_meals(u)
+    main = [m for m in meals if m[1] >= MAIN_MEAL_G]
+    info = {"target_step": None, "target_carbs": None, "meals_changed": 0}
+    factor, a_new = SWAPS.get(sc.swap, (1.0, None))
+    shift = int(round(sc.shift_hours * 60 / STEP))
+    walk_starts = []
+    if sc.scope == "all":
+        targets = main
+    else:
+        targets = main[:1]
+        if not targets:
+            past = np.flatnonzero(u.carbs[0, W - 18: W] >= MAIN_MEAL_G)
+            if len(past):
+                walk_starts.append(W)  # meal already eaten: a walk can still start now
+    if targets:
+        info.update(target_step=targets[0][0] - W, target_carbs=targets[0][1])
+    for m in targets:
+        c0 = m[0]
+        is_dinner = names.get(c0, "").lower().startswith(("dinner", "fasting dinner"))
+        if shift and (sc.scope == "next" or is_dinner):
+            m[0] = int(np.clip(c0 + shift, W + 1, W + H - 1))
+        m[1] *= factor
+        if a_new is not None:
+            m[2] = a_new
+        walk_starts.append(max(m[0] + 2, W))
+        info["meals_changed"] += 1
+        if c0 == targets[0][0]:
+            info["meal_step"] = m[0] - W
+    _write_future(u, meals)
+    if sc.walk_minutes:
+        for st in walk_starts:
+            u.A[0, st: st + int(np.ceil(sc.walk_minutes / STEP))] = 1.0
     if sc.missed_dose and s.on_metformin:
         u.dose[0, :] = 0.0
         x0[6] = 0.35
@@ -254,8 +285,7 @@ def apply_scenario(pp: Prepared, k: int, H: int, sc: Scenario):
         t = k * STEP
         for j in range(1, H):
             if ((t + j * STEP) % 1440) == 90:
-                u.carbs[0, W + j] += 30.0
-                u.af[0, W + j:] = AF["tea_snack"]
+                _write_future(u, _future_meals(u) + [[W + j, 30.0, AF["tea_snack"]]])
                 break
     return u, obs, x0, info
 

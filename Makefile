@@ -19,7 +19,7 @@ help:
 	@echo "docker-up    one command start with Docker Compose (dashboard on :8080)"
 
 setup:
-	@command -v uv >/dev/null 2>&1 && uv venv .venv --python 3.11 || python3.11 -m venv .venv
+	@command -v uv >/dev/null 2>&1 && uv venv .venv --python 3.11 --allow-existing || python3.11 -m venv .venv
 	@command -v uv >/dev/null 2>&1 && uv pip install --python $(PY) -e ".[dev,docs]" || $(PY) -m pip install -e ".[dev,docs]"
 	cd frontend && $(NPM) ci
 	$(PY) -m playwright install chromium
