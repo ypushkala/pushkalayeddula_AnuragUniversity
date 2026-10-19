@@ -1,53 +1,64 @@
 import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
-import { api, dayMonth, fullTime, hhmm } from "./api";
+import { api, dayMonth, hhmm } from "./api";
+import { Menu } from "./components/Disclosure";
 import { LiveProvider, useLive } from "./live";
 import { Cardio } from "./pages/Cardio";
 import { ModelCard } from "./pages/ModelCard";
 import { Note } from "./pages/Note";
-import { Patient, TwinTab } from "./pages/Patient";
+import { Overview, Patient, Record } from "./pages/Patient";
 import { Share } from "./pages/Share";
 import { Ward } from "./pages/Ward";
 import { WhatIf } from "./pages/WhatIf";
 
 const JUMPS: [string, string][] = [
-  ["15 Mar 17:30", "2026-03-15T17:30:00+05:30"],
-  ["15 Mar 18:00", "2026-03-15T18:00:00+05:30"],
-  ["15 Mar 19:45", "2026-03-15T19:45:00+05:30"],
+  ["17:30, before iftar", "2026-03-15T17:30:00+05:30"],
+  ["18:00, iftar approaching", "2026-03-15T18:00:00+05:30"],
+  ["19:45, demo start", "2026-03-15T19:45:00+05:30"],
 ];
 
+/** The time and a play button stay visible; speed and jumps live in a small menu. */
 function ClockControl() {
   const { clock, connected, refreshClock } = useLive();
   if (!clock) return <div className="clock muted">Connecting</div>;
   const set = (body: Parameters<typeof api.setClock>[0]) => api.setClock(body).then(refreshClock);
   return (
     <div className="clock">
-      <span title={connected ? "Replay stream connected" : "Stream disconnected"} className={`dot-live ${connected && !clock.paused ? "" : "off"}`} />
-      <span className="clock-time"><span className="hide-sm">{fullTime(clock.now)}</span><span className="show-sm">{dayMonth(clock.now)} {hhmm(clock.now)}</span> IST</span>
-      <span className="muted small">Replay {clock.paused ? "paused" : `${clock.speed}x`}</span>
-      <button className="btn" onClick={() => set({ paused: !clock.paused })}>{clock.paused ? "Play" : "Pause"}</button>
-      <select className="hide-sm" aria-label="Replay speed" value={clock.speed} onChange={e => set({ speed: +e.target.value })}>
-        {[1, 10, 60, 300].map(s => <option key={s} value={s}>{s}x</option>)}
-      </select>
-      <select className="hide-sm" aria-label="Jump to time" value="" onChange={e => e.target.value && set({ at: e.target.value })}>
-        <option value="">Jump to</option>
-        {JUMPS.map(([l, v]) => <option key={v} value={v}>{l}</option>)}
-      </select>
+      <span title={connected ? "Live replay connected" : "Replay disconnected"} className={`dot-live ${connected && !clock.paused ? "" : "off"}`} />
+      <span className="clock-time">{dayMonth(clock.now)}, {hhmm(clock.now)}</span>
+      <button className="btn" onClick={() => set({ paused: !clock.paused })} aria-label={clock.paused ? "Play replay" : "Pause replay"}>
+        {clock.paused ? "Play" : "Pause"}
+      </button>
+      <Menu label="Replay">
+        <div className="menu-label">Speed</div>
+        <div className="menu-row">
+          {[1, 10, 60, 300].map(s => (
+            <button key={s} className={`btn ${clock.speed === s ? "primary" : ""}`} onClick={() => set({ speed: s })}>{s}x</button>
+          ))}
+        </div>
+        <div className="menu-label">Jump to 15 March</div>
+        {JUMPS.map(([l, v]) => <button key={v} className="menu-item" onClick={() => set({ at: v })}>{l}</button>)}
+        <p className="menu-note">The demo replays synthetic data as if it were arriving now.</p>
+      </Menu>
     </div>
   );
 }
 
-function Clinician() {
-  const { clinician, setClinician } = useLive();
+function Settings() {
+  const { clinician, setClinician, theme, setTheme } = useLive();
   return (
-    <label className="clinician small hide-sm">Signed in as{" "}
-      <input type="text" value={clinician} maxLength={40} onChange={e => setClinician(e.target.value)} aria-label="Clinician name" />
-    </label>
+    <Menu label="Settings">
+      <label className="menu-field">Your name, for acknowledgements
+        <input type="text" value={clinician} maxLength={40} onChange={e => setClinician(e.target.value)} />
+      </label>
+      <div className="menu-label">Appearance</div>
+      <div className="menu-row">
+        <button className={`btn ${theme === "light" ? "primary" : ""}`} onClick={() => setTheme("light")}>Light</button>
+        <button className={`btn ${theme === "dark" ? "primary" : ""}`} onClick={() => setTheme("dark")}>Dark</button>
+      </div>
+      <div className="menu-label">Keyboard, on the ward list</div>
+      <p className="menu-note">j and k move between patients, Enter opens one, / jumps to search.</p>
+    </Menu>
   );
-}
-
-function ThemeToggle() {
-  const { theme, setTheme } = useLive();
-  return <button className="btn" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>{theme === "dark" ? "Light" : "Dark"}</button>;
 }
 
 function Shell() {
@@ -57,16 +68,14 @@ function Shell() {
       <header className="masthead">
         <div className="brand">
           <span className="brand-name">Prativimb</span>
-          <span className="brand-sub">Patient twin</span>
+          <nav className="nav" aria-label="Main">
+            <NavLink to="/" end>Ward</NavLink>
+            <NavLink to="/model">About the model</NavLink>
+          </nav>
         </div>
-        <nav className="nav">
-          <NavLink to="/" end>Ward</NavLink>
-          <NavLink to="/model">Model card</NavLink>
-        </nav>
         <div className="mast-tools">
           <ClockControl />
-          <Clinician />
-          <ThemeToggle />
+          <Settings />
         </div>
       </header>
       <main id="main" tabIndex={-1}>
@@ -74,16 +83,17 @@ function Shell() {
           <Route path="/" element={<Ward />} />
           <Route path="/model" element={<ModelCard />} />
           <Route path="/patient/:id" element={<Patient />}>
-            <Route index element={<TwinTab />} />
+            <Route index element={<Overview />} />
             <Route path="whatif" element={<WhatIf />} />
             <Route path="cardio" element={<Cardio />} />
+            <Route path="record" element={<Record />} />
             <Route path="note" element={<Note />} />
           </Route>
         </Routes>
       </main>
       <footer className="footer">
         <span>Synthetic data only. Decision support, not a diagnosis.</span>
-        <span>Prativimb 1.1, MIT licence</span>
+        <span>Prativimb 1.2, MIT licence</span>
       </footer>
     </>
   );

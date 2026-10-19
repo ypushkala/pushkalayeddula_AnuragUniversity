@@ -193,20 +193,30 @@ def factors(model: dict, w: pd.DataFrame, top: int = 4) -> list[list[dict]]:
     return out
 
 
+def _vs_usual(z: float, higher: bool) -> str:
+    """Plain words for a deviation from the patient's own usual level."""
+    if not np.isfinite(z) or abs(z) < 0.5:
+        return "about usual"
+    size = "slightly" if abs(z) < 1 else "clearly" if abs(z) < 2 else "well"
+    return f"{size} {'above' if (z > 0) == higher else 'below'} usual"
+
+
 def factor_text(key: str, row: pd.Series) -> str:
     if key in PHRASES:
-        name, unit = PHRASES[key]
-        last3, mean7 = row.get(f"{key}_last3"), row.get(f"{key}_mean7")
-        z = row.get(f"z_{key}")
+        last3 = row.get(f"{key}_last3")
+        z = float(row.get(f"z_{key}", np.nan))
+        usual = _vs_usual(z, True)
         if key == "efficiency":
-            return f"Sleep efficiency {last3 * 100:.0f}% over the last 3 nights ({z:+.1f} SD vs own baseline)"
+            return f"Sleep efficiency {last3 * 100:.0f}% over the last 3 nights, {usual}"
         if key == "sleep_h":
-            return f"Sleep {last3:.1f} h a night over the last 3 nights ({z:+.1f} SD vs own baseline)"
+            return f"Sleep {last3:.1f} h a night over the last 3 nights, {usual}"
         if key == "steps":
-            return f"Steps {last3:,.0f} a day over the last 3 days ({z:+.1f} SD vs own baseline)"
+            return f"{last3:,.0f} steps a day over the last 3 days, {usual}"
         if key == "awakenings":
-            return f"{last3:.1f} awakenings a night over the last 3 nights ({z:+.1f} SD vs own baseline)"
-        return f"{name[0].upper() + name[1:]}: {last3:.0f} {unit} over the last 3 nights ({z:+.1f} SD vs own baseline)"
+            return f"{last3:.1f} awakenings a night over the last 3 nights, {usual}"
+        labels = {"rhr": "Resting heart rate", "rmssd": "Heart rate variability", "deep_min": "Deep sleep", "rem_min": "REM sleep"}
+        unit = PHRASES[key][1]
+        return f"{labels.get(key, key)} {last3:.0f} {unit} over the last 3 nights, {usual}"
     ehr = {"age": f"Age {row.get('age', 0):.0f}", "sbp": f"Systolic BP {row.get('sbp', 0):.0f} mmHg",
            "fh_cad": "Family history of ischaemic heart disease", "fh_mi": "Family history of myocardial infarction",
            "chd_9p21_risk": f"9p21 risk alleles: {row.get('chd_9p21_risk', 0):.0f}", "tc_hdl": f"TC/HDL ratio {row.get('tc_hdl', 0):.1f}",

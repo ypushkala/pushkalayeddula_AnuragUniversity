@@ -90,3 +90,13 @@ Produces `data/raw/` (FHIR style EHR bundles, device style exports for hero pati
 - [x] Patient view in English, Hindi and Tamil with print and WhatsApp sharing (translations marked for review).
 - [x] Phone and tablet layouts, skeletons, band explained in words, a table twin for every chart.
 - [x] axe-core audit clean for WCAG 2.1 A and AA on every screen, light and dark.
+
+## Version 1.2: easier to use
+
+- [x] Larger type (16 px base), bigger charts and controls.
+- [x] Ward opens on "Needs attention"; five columns; glucose trend in words; one line change summary.
+- [x] Patient Overview leads with one sentence and the chart; reasons, meal entry, history and the two week pattern open on demand.
+- [x] Health record, Heart health and Clinical note are separate tabs; breadcrumb back to the ward.
+- [x] What if starts with the best changes as cards; custom controls and full tables are one click away.
+- [x] Masthead reduced to the clock, Play, and Replay and Settings menus; plain language problem names and heart reasons.
+- [x] Accessibility audit still clean in both themes.

@@ -56,7 +56,7 @@ Three fictional demo patients carry the story:
 
 More screens (clinical note, model card, patient view, phone layout, dark mode) are in [`docs/screenshots/`](docs/screenshots/).
 
-**Using it.** Ward: `j` and `k` move, `Enter` opens, `/` searches, and the summary bar lists new and resolved alerts since your last visit. Twin: acknowledge an alert with a snooze and a note; under *Tell the twin about a meal* add a planned dinner ("in 1 h, 60 g millet") and the forecast and reasons update. What if: switch between *Tonight, next meal* and *Next 24 h, every meal*; the ranked lever table shows what helps this patient most. *Patient view* opens a printable, shareable summary. Every chart has a *Show as table* toggle.
+**Using it.** The ward opens on the patients who need attention; `j` and `k` move, `Enter` opens, `/` searches, and one line says what changed since your last visit. A patient's Overview leads with a single sentence (now, next two hours, likely range), the chart and the alerts; reasons sit under **Why?**, and the meal form, history and two week pattern open on demand. **What if** starts with the changes that help this patient most, as cards. **Health record**, **Heart health** and **Clinical note** are separate tabs. Replay speed, jump times, your name and the theme live in the **Replay** and **Settings** menus. Every chart has a *Show as table* option.
 
 ## 5. Technical stack
 

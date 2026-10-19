@@ -28,7 +28,7 @@ export const baseStyle = (ink3: string) => ({
   background: "transparent",
   color: ink3,
   fontFamily: "IBM Plex Sans, sans-serif",
-  fontSize: "11px",
+  fontSize: "13px",
   overflow: "visible",
   fontVariantNumeric: "tabular-nums",
 });

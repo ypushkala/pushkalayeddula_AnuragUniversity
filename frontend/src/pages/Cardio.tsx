@@ -2,6 +2,7 @@ import * as Plot from "@observablehq/plot";
 import { useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { api, dayMonth, dayToDate, fmt, fullTime } from "../api";
+import { Disclosure } from "../components/Disclosure";
 import { PlotFigure, baseStyle } from "../components/PlotFigure";
 import { TableView } from "../components/TableView";
 import { useLive, useLiveData } from "../live";
@@ -78,44 +79,46 @@ export function Cardio() {
     ],
   });
 
-  const s = v.summary;
+  // Describe the week on screen, not today: a past week can be flagged even if an event has happened since.
+  const status = v.risk === null ? "After the recorded event; risk is not scored for this week."
+    : v.flag ? `Raised risk of a heart event within 3 days (${fmt(v.risk * 100)}%).`
+    : "No sign of raised risk this week.";
   return (
     <>
-      <div className="page-head" style={{ marginBottom: 10 }}>
+      <div className="wi-head">
         <div>
-          <h2>Seven days ending {dayMonth(dayToDate(v.end_day))}</h2>
-          <div className="meta">
-            Rolling seven day window of wearable data, compared with this patient's own earlier baseline.
-            {v.event && <> <span className="alert-text">Event recorded {fullTime(v.event.time)}: {v.event.description}.</span></>}
-          </div>
+          <h2>Heart health, week ending {dayMonth(dayToDate(v.end_day))}</h2>
+          <p className={`lead ${v.flag ? "alert-text" : ""}`}>{status}</p>
+          {v.event && <p className="alert-text">Event recorded {fullTime(v.event.time)}: {v.event.description}.</p>}
+          {v.factors.length > 0 && v.flag && (
+            <ul className="reasons">{v.factors.slice(0, 3).map(f => <li key={f.factor}>{f.text}</li>)}</ul>
+          )}
         </div>
-        <div style={{ display: "flex", gap: 6 }} className="no-print">
-          <button className="btn" onClick={() => setEnd(Math.max(12, v.end_day - 1))}>Previous day</button>
-          <button className="btn" onClick={() => setEnd(Math.min(lastComplete, v.end_day + 1))} disabled={v.end_day >= lastComplete}>Next day</button>
-          <button className="btn" onClick={() => setEnd(undefined)}>Latest</button>
+        <div className="week-nav no-print" role="group" aria-label="Change week">
+          <button className="btn" onClick={() => setEnd(Math.max(12, v.end_day - 1))}>Earlier</button>
+          <button className="btn" onClick={() => setEnd(Math.min(lastComplete, v.end_day + 1))} disabled={v.end_day >= lastComplete}>Later</button>
+          <button className="btn" onClick={() => setEnd(undefined)}>This week</button>
         </div>
-      </div>
-      <div className="stats num">
-        <div className="stat"><div className="label">Risk, window end</div>
-          <div className="v">{v.risk !== null ? `${fmt(v.risk * 100, 1)}%` : "n/a"}</div>
-          <div className="d">{v.risk === null ? "after event, not scored" : v.flag ? <span className="alert-text">flagged</span> : "below threshold"}</div></div>
-        <div className="stat"><div className="label">Flag threshold</div><div className="v">{fmt(v.threshold * 100, 1)}%</div><div className="d">95% specificity</div></div>
-        <div className="stat"><div className="label">Status now</div>
-          <div className="v" style={{ fontSize: 15, paddingTop: 5 }}>{s.post_event ? "Post event" : s.flag ? "Flagged" : "Not flagged"}</div>
-          <div className="d">{s.flag_since !== null && s.flag_since !== undefined ? `since ${dayMonth(dayToDate(s.flag_since))}` : ""}</div></div>
       </div>
       <div className="two">
         <div>
-          <div className="chart-title"><h2>Daily wearable measures</h2>
-            <div className="heat-key">
-              <span>Deviation from own baseline, in the adverse direction:</span>
-              {[0.5, 1.2, 2, 3].map(z => <span key={z} className="sw" style={shade(z)} />)}
-              <span>more</span>
-            </div>
+          <div className="chart-title"><h3>Risk, day by day</h3>
+            <div className="legend"><span><i style={{ borderColor: p.accent }} />Risk</span><span><i className="dot" style={{ background: p.alert }} />Flagged</span></div>
+          </div>
+          <TableView title="Daily cardiovascular risk" columns={["Week ending", "Risk of event in 3 days", "Flagged"]}
+            rows={traj.map(t => [dayMonth(t.d), t.risk === null ? "after event" : `${fmt(t.risk * 100, 1)}%`, t.flag ? "yes" : ""])}>
+            <PlotFigure spec={trajSpec} ariaLabel="Daily cardiovascular risk" />
+          </TableView>
+        </div>
+        <div>
+          <div className="chart-title"><h3>This week against usual</h3></div>
+          <div className="heat-key">
+            <span>Darker means further from usual, in the worrying direction</span>
+            {[0.5, 1.2, 2, 3].map(z => <span key={z} className="sw" style={shade(z)} />)}
           </div>
           <table className="heat num">
             <thead>
-              <tr><th>Measure</th>{v.dates.map(d => <th key={d}>{dayMonth(d)}</th>)}<th>Baseline</th></tr>
+              <tr><th>Measure</th>{v.dates.map(d => <th key={d}>{dayMonth(d)}</th>)}<th>Usual</th></tr>
             </thead>
             <tbody>
               {ROWS.map(r => {
@@ -125,47 +128,31 @@ export function Cardio() {
                 return (
                   <tr key={r.key}>
                     <td className="metric">{r.name}{r.unit && <span className="muted">, {r.unit}</span>}</td>
-                    {m.values.map((x, i) => <td key={i} style={shade(m.adverse_z[i])} title={m.adverse_z[i] !== null ? `${fmt(m.adverse_z[i], 1)} SD adverse` : ""}>{f(x)}</td>)}
+                    {m.values.map((x, i) => <td key={i} style={shade(m.adverse_z[i])} title={m.adverse_z[i] !== null ? `${fmt(m.adverse_z[i], 1)} SD from usual` : ""}>{f(x)}</td>)}
                     <td className="base">{f(m.baseline)}</td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
-          <div className="chart-title" style={{ marginTop: 18 }}><h2>Sleep architecture</h2>
-            <div className="legend">
-              {Object.entries(stageColor).map(([k, c]) => <span key={k}><i className="band" style={{ background: c, outline: k === "Awake" ? `1px solid ${p.rule}` : undefined }} />{k}</span>)}
-            </div>
-          </div>
-          <TableView title="Sleep stages per night" columns={["Night", "Deep, min", "REM, min", "Core, min", "Awake, min"]}
-            rows={v.dates.map((d, i) => [dayMonth(d), fmt(byKey.deep_min?.values[i]), fmt(byKey.rem_min?.values[i]),
-              fmt(byKey.core_min?.values[i]), fmt(byKey.awake_min?.values[i])])}>
-            <PlotFigure spec={sleepSpec} ariaLabel="Sleep stages per night" />
-          </TableView>
-        </div>
-        <div>
-          <div className="chart-title"><h2>Risk trajectory</h2>
-            <div className="legend"><span><i style={{ borderColor: p.accent }} />Ensemble risk</span><span><i className="dot" style={{ background: p.alert }} />Flagged day</span></div>
-          </div>
-          <TableView title="Daily cardiovascular risk" columns={["Window ending", "Risk of event in 3 days", "Flagged"]}
-            rows={traj.map(t => [dayMonth(t.d), t.risk === null ? "after event" : `${fmt(t.risk * 100, 1)}%`, t.flag ? "yes" : ""])}>
-            <PlotFigure spec={trajSpec} ariaLabel="Daily cardiovascular risk" />
-          </TableView>
-          <div className="block" style={{ marginTop: 14 }}>
-            <span className="label">Top contributing factors, window ending {dayMonth(dayToDate(v.end_day))}</span>
-            {v.factors.length ? (
-              <ul className="plain">
-                {v.factors.map(f => <li key={f.factor}><span>{f.text}</span></li>)}
-              </ul>
-            ) : <div className="empty">No factor raises risk for this window.</div>}
-            <p className="small muted" style={{ marginTop: 8 }}>
-              Ensemble of an isolation forest and a personal baseline z score (both unsupervised) with a LightGBM classifier
-              trained on synthetic labelled episodes, combined by logistic regression. Factors come from SHAP values of the
-              classifier, worded against the patient's own baseline.
-            </p>
-          </div>
         </div>
       </div>
+      <Disclosure title="Sleep stages, night by night">
+        <div className="legend">
+          {Object.entries(stageColor).map(([k, c]) => <span key={k}><i className="band" style={{ background: c, outline: k === "Awake" ? `1px solid ${p.rule}` : undefined }} />{k}</span>)}
+        </div>
+        <TableView title="Sleep stages per night" columns={["Night", "Deep, min", "REM, min", "Core, min", "Awake, min"]}
+          rows={v.dates.map((d, i) => [dayMonth(d), fmt(byKey.deep_min?.values[i]), fmt(byKey.rem_min?.values[i]),
+            fmt(byKey.core_min?.values[i]), fmt(byKey.awake_min?.values[i])])}>
+          <PlotFigure spec={sleepSpec} ariaLabel="Sleep stages per night" />
+        </TableView>
+      </Disclosure>
+      <Disclosure title="How this is worked out">
+        <p className="muted">Seven days of resting heart rate, heart rate variability, sleep and steps are compared with this
+          patient's own earlier weeks. Two methods look for anything unusual and a third has learned the pattern that comes
+          before an event; together they give the risk. A flag is raised above {fmt(v.threshold * 100, 1)}%, a level that
+          keeps false flags to about 1 in 20 patient days.</p>
+      </Disclosure>
     </>
   );
 }

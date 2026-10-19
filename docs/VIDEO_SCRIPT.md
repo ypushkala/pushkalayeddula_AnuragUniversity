@@ -5,7 +5,7 @@ Unlisted YouTube upload. Screen at 1920 x 1080, browser zoom 100%, light theme u
 ## Before recording
 
 1. `make all` (or use the committed artefacts), then in two terminals `make api` and `make web`. Open http://localhost:5173.
-2. In the masthead set replay speed to **10x** and press **Pause**. Use **Jump to** for every time change below.
+2. Open the **Replay** menu in the masthead, set speed to **10x** and press **Pause**. Every time change below uses **Replay**, then a jump time.
 3. Have `docs/presentation.pdf`, `docs/architecture.png` and `reports/metrics.md` open in other tabs.
 4. Close notifications. Record the terminal for the `make data` moment in section 5.
 
@@ -67,23 +67,23 @@ Run `make data` on camera (about 20 seconds). Show `data/raw/ehr/PTV-0001.json` 
 
 ## 07:00 Ward view
 
-Jump to **15 Mar 19:45**. Ward page.
+Replay menu, **19:45, demo start**. Ward page.
 
-"This is the ward list at 19:45 on Sunday 15 March. Two hundred patients sorted by priority. Red means a confident alert: glucose above 180 likely within two hours, with the expected crossing time and peak. Grey outline is a watch, shown but not pushed. The next column is the cardiovascular risk of an event in three days. Sparklines are the last 24 hours, the shaded band is 70 to 180."
+"This is the ward at 19:45 on Sunday 15 March. It opens on the patients who need attention, not all two hundred. Red means a confident alert: glucose above 180 likely within two hours, with the time and the peak. The heart column shows a raised risk of a cardiac event in three days. Glucose now comes with its trend in words, and the small line is the last 24 hours."
 
-"The line above the table says what changed since I last looked: new alerts and resolved ones, by name. Clinicians scan for change, not state." Press `j` twice and `k` once to show keyboard navigation, then **Glucose alerts**, then **All patients**. Press Enter on Ramesh Patil.
+"The line above the table says what changed since I last looked: new alerts and resolved ones, by name. Clinicians scan for change, not state." Press `j` twice and `k` once to show keyboard navigation, click **All patients** and back to **Needs attention**, then open Ramesh Patil.
 
 ## 08:15 Ramesh: the patient twin
 
-"Ramesh, 52, a security supervisor on night shifts, HbA1c 8.4%. Left column is the record: problems with ICD-10 codes, medications, labs with dates and previous values, genetic markers, and the twin's own parameters: his insulin sensitivity is about 30% of a typical adult without diabetes.
+"Ramesh, 52, a security supervisor on night shifts. The overview leads with one line: 158 and steady now, likely above 180 around 21:10, peaking near 278. The full record is one click away on the Health record tab: problems with ICD-10 codes, medicines, labs with dates, genetic markers, and what the twin has learned, for example his insulin sensitivity is about 30% of a typical adult without diabetes.
 
-In the centre, the black line is his CGM. Right now he is 158 and drifting down. The teal line is the hybrid forecast with its 90% interval; the dashed grey line is the twin alone. The twin expects his usual dinner at 20:15 and a peak around 278 at 21:45. Below, on the same time axis: meals, his missed morning metformin, his daytime sleep after the night shift, steps and heart rate.
+The black line is his CGM; the teal line is the forecast with its likely range. The twin expects his usual dinner at 20:15 and a peak around 278 at 21:45. Below, on the same time axis: meals, his missed morning metformin, his daytime sleep after the night shift, steps and heart rate.
 
-On the right, the alert, with its reason in one sentence: expected dinner, reduced insulin sensitivity, and short sleep with the night shift. The bars show how many mg/dL each factor adds to the peak, combining exact Shapley values from the twin with SHAP from the learned correction. The alert log shows the twin has held this alert since 19:15, about two hours before the predicted crossing."
+On the right, the alert. Click **Why?**: the reason in one sentence, expected dinner, reduced insulin sensitivity, short sleep with the night shift, and bars showing how many mg/dL each factor adds to the peak, from exact Shapley values on the twin and SHAP on the learned correction. Open **History**: the twin has held this alert since 19:15, about two hours before the crossing."
 
-Scroll to the ambulatory glucose profile: "Two weeks at a glance: time in range, GMI and variability, in the international consensus format." Click **Show as table** under a chart: "every chart has a table twin, for screen readers and for anyone who wants the numbers."
+Open **Two week pattern**: "Two weeks at a glance: time in range, GMI and variability, in the international consensus format." Click **Show as table** under a chart: "every chart has a table twin, for screen readers and for anyone who wants the numbers."
 
-Back on the alert, click **Acknowledge**, choose 1 h, note "Discussed walk after dinner", confirm. "The alert stays visible but drops down the ward list for an hour, and the activity log records who did what." Then under **Tell the twin about a meal**: In 1 h, Millet (ragi or jowar) meal, 60 g, **Tell the twin**. "Ramesh says he will have ragi rotis tonight. The forecast peak drops from about 278 to about 185 straight away, because the twin now knows the meal instead of assuming his usual rice." Remove the entry again.
+Back on the alert, click **Mark as seen**, choose 1 h, note "Discussed walk after dinner", confirm. "The alert stays visible but drops down the ward list for an hour, and the activity log records who did what." Then open **Tell the twin about a meal**: In 1 h, Millet (ragi or jowar) meal, 60 g, **Tell the twin**. "Ramesh says he will have ragi rotis tonight. The forecast peak drops from about 278 to about 185 straight away, because the twin now knows the meal instead of assuming his usual rice." Remove the entry again.
 
 ## 10:30 What if: case study
 
@@ -97,7 +97,7 @@ Click **What if**.
 4. Click **Meal 1 h earlier**: "And something the twin will not promise: dinner can only move to 19:50 now, and his lunch glucose has not settled, so an earlier dinner barely helps tonight. A twin that can say no is more trustworthy than one that always agrees."
 5. Drag **Sleep, last 3 nights** to 7 h and tick **Missed metformin dose** briefly to show the controls, then **Reset**.
 
-Scroll to **Levers for this patient, ranked**: "The twin tries every change on its own and ranks them for Ramesh tonight: half the portion, walk and millets, millets, a 30 minute walk. Click any row to show it." Switch to **Next 24 h, every meal**: "Over a whole day, a smaller portion and a 30 minute walk after every main meal matter most for him. Beyond six hours the absolute level drifts, so we read the difference between the curves."
+"The page opens on the changes that would help Ramesh most tonight, as cards: half the portion, walk and millets, millets, a 30 minute walk. The top one is already showing: his peak falls from 318 to 243." Click the other cards in turn. Switch to **Next 24 hours, every meal**: "Over a whole day, a smaller portion and a 30 minute walk after every main meal matter most for him. Beyond six hours the absolute level drifts, so we read the difference between the curves."
 
 "These curves come from the mechanistic twin, solved with scipy's adaptive solver. They are a conversation aid, not a prescription."
 
@@ -105,17 +105,17 @@ Click **Patient view** on the patient header, choose हिन्दी: "And th
 
 ## 12:30 Fatima: hypoglycaemia to rebound
 
-Go to the ward, open Fatima Shaikh. Jump to **15 Mar 18:00**.
+Go to the ward, open Fatima Shaikh. Replay menu, **18:00, iftar approaching**.
 
 "Fatima, 46, prediabetic, observing Ramadan. It is 18:00, half an hour before iftar. She is at 69 after a long fast and an afternoon walk to the market. A separate low glucose model flagged a likely low from 16:00 with 98% probability; the twin shows a low now, and a rebound to about 206 after iftar, with the reasons: a fast absorbing iftar of dates and sherbet. The alert log shows it was raised at 17:45, and that the low was forecast from 16:00. A clinician could suggest a smaller, slower iftar."
 
 Scroll to the AGP: "Her two week profile shows the Ramadan pattern: a suhoor peak before dawn, the afternoon dip, the iftar rebound."
 
-Jump back to **15 Mar 19:45**.
+Replay menu, **19:45, demo start**.
 
 ## 13:45 Suresh: cardio week
 
-Open Suresh Menon, **Cardio week**. Click **Previous day** until the window ends 12 Mar (or use `/patient/PTV-0003/cardio?end=26`).
+Open Suresh Menon, **Heart health**. Click **Earlier** until the week ends 12 Mar (or use `/patient/PTV-0003/cardio?end=26`).
 
 "Suresh, 61, hypertensive, father had a heart attack at 58. The heatmap compares each night with his own baseline; darker means a worse deviation. Over the week his resting heart rate climbs from 61 to 72 and his HRV falls from 38 to 23 milliseconds, with less deep and REM sleep. The risk trajectory crosses the flag threshold on 9 March, four days before the simulated event on 13 March, marked in red. The factors are worded against his own baseline."
 
@@ -127,7 +127,7 @@ Open Ramesh, **Clinical note**.
 
 ## 15:30 Metrics and model card
 
-Open **Model card**, then slides 8 to 10.
+Open **About the model**, then slides 8 to 10.
 
 "All metrics are on 40 test patients the models never saw, on days after the twin's calibration week. At 120 minutes the hybrid's error is 25.2 mg/dL, against 29.0 for physics alone and 27.6 for machine learning alone: the hybrid beats both parts at every horizon. Clarke zone A is 85% at one hour. The 90% intervals cover 88.7 to 89.8% of readings. The confident alert tier catches 67% of spikes at 85% precision with 0.2 false alarms per patient day; the watch tier catches 90% about 75 minutes ahead. For cardiovascular risk the ensemble reaches an AUROC of 0.95, but with only six test events the interval is wide, and we say so."
 

@@ -1,20 +1,27 @@
-import { Link, NavLink, Outlet, useOutletContext, useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { api, dayMonth, fmt, hhmm, minuteToDate, signed, type Obs, type PatientDetail } from "../api";
-import { FactorBars } from "../components/FactorBars";
+import { Link, NavLink, Outlet, useOutletContext, useParams } from "react-router-dom";
+import { api, dayMonth, fmt, hhmm, minuteToDate, type Forecast, type Obs, type PatientDetail } from "../api";
 import { Activity } from "../components/Activity";
 import { AgpChart } from "../components/AgpChart";
 import { AlertCards } from "../components/AlertCards";
+import { Disclosure } from "../components/Disclosure";
+import { ForecastChart } from "../components/ForecastChart";
 import { MealEntry } from "../components/MealEntry";
 import { SkeletonBlock } from "../components/Skeleton";
 import { TableView } from "../components/TableView";
-import { ForecastChart } from "../components/ForecastChart";
 import { useLiveData } from "../live";
+import { trendWord } from "./Ward";
 
 const LAB_NAMES: Record<string, string> = {
   hba1c: "HbA1c", fpg: "Fasting glucose", ldl: "LDL cholesterol", hdl: "HDL cholesterol", tg: "Triglycerides",
   tc: "Total cholesterol", creatinine: "Creatinine", egfr: "eGFR", sbp: "Systolic BP", dbp: "Diastolic BP",
   bmi: "BMI", weight: "Weight", waist: "Waist",
+};
+
+// Plain words for the header; the full coded list is on the Health record tab.
+const PLAIN: Record<string, string> = {
+  "E11.9": "Type 2 diabetes", "R73.03": "Prediabetes", "I10": "High blood pressure", "E78.5": "High cholesterol",
+  "E66.9": "Obesity", "Z82.49": "Family history of heart disease", "G47.26": "Night shift work", "F17.210": "Smoker",
 };
 
 export function usePatient() {
@@ -27,31 +34,25 @@ export function Patient() {
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => { setDetail(null); api.patient(id).then(setDetail).catch(e => setErr(String(e))); }, [id]);
   if (err) return <p className="empty">Patient not found ({err}).</p>;
-  if (!detail) return <p className="empty">Loading record.</p>;
+  if (!detail) return <SkeletonBlock height={120} label="Loading patient" />;
   const p = detail.patient;
+  const problems = detail.conditions.map(c => PLAIN[c.code.code] ?? c.code.display);
   return (
     <>
+      <nav className="crumbs" aria-label="Breadcrumb"><Link to="/">Ward</Link><span aria-hidden="true"> / </span><span>{p.name}</span></nav>
       <div className="patient-head">
         <div>
-          <div className="label">Patient twin</div>
           <h1>{p.name}</h1>
-          <div className="facts">
-            {p.age} {p.gender === "male" ? "M" : "F"} <span className="muted">&middot;</span> <span className="mono">{p.id}</span>{" "}
-            <span className="muted">&middot;</span> {p.city} <span className="muted">&middot;</span> {p.occupation}{" "}
-            <span className="muted">&middot;</span> {detail.device}
-          </div>
-          {detail.context.length > 0 && <div className="facts" style={{ marginTop: 2 }}>{detail.context.join(". ")}.</div>}
+          <div className="facts">{p.age} {p.gender === "male" ? "M" : "F"}, {p.city}. {problems.slice(0, 4).join(", ")}.</div>
+          {detail.context.length > 0 && <div className="facts muted">{detail.context.join(". ")}.</div>}
         </div>
-        <div className="small muted" style={{ textAlign: "right" }}>
-          <Link className="btn" to={`/share/${p.id}`} style={{ marginBottom: 8, display: "inline-block" }}>Patient view</Link><br />
-          Synthetic record. Held out from training ({detail.split} split).<br />
-          Twin calibrated on days 1 to 7, fit error {fmt(detail.twin.calibration_rmse_fit)} mg/dL.
-        </div>
+        <Link className="btn" to={`/share/${p.id}`}>Patient view</Link>
       </div>
-      <nav className="tabs">
-        <NavLink end to={`/patient/${id}`}>Twin</NavLink>
+      <nav className="tabs" aria-label="Patient sections">
+        <NavLink end to={`/patient/${id}`}>Overview</NavLink>
         <NavLink to={`/patient/${id}/whatif`}>What if</NavLink>
-        <NavLink to={`/patient/${id}/cardio`}>Cardio week</NavLink>
+        <NavLink to={`/patient/${id}/cardio`}>Heart health</NavLink>
+        <NavLink to={`/patient/${id}/record`}>Health record</NavLink>
         <NavLink to={`/patient/${id}/note`}>Clinical note</NavLink>
       </nav>
       <Outlet context={{ detail }} />
@@ -59,131 +60,57 @@ export function Patient() {
   );
 }
 
-function ObsRows({ rows }: { rows: Obs[] }) {
+function Headline({ fc }: { fc: Forecast | null }) {
+  if (!fc) return <SkeletonBlock height={92} label="Loading forecast" />;
+  if (!fc.available) return <div className="headline"><p className="lead">No CGM reading in the last 30 minutes.</p></div>;
+  const st = fc.status;
+  const h120 = fc.horizons.find(h => h.h === 120);
+  let sentence = "Expected to stay between 70 and 180 for the next 2 hours.";
+  if (st.low === "now") sentence = "Glucose is low now.";
+  else if (st.low === "forecast") sentence = "Glucose is likely to fall below 70 within the hour.";
+  else if (st.tier === "alert" || st.tier === "watch")
+    sentence = `${st.tier === "alert" ? "Likely" : "May"} to go above 180 around ${hhmm(minuteToDate(st.cross_minute!))}, peaking near ${fmt(st.peak)} at ${hhmm(minuteToDate(st.peak_minute))}.`;
+  else if (st.tier === "high") sentence = `Above 180 now; peak near ${fmt(st.peak)} expected at ${hhmm(minuteToDate(st.peak_minute))}.`;
   return (
-    <table className="kv num">
-      <tbody>
-        {rows.map(o => (
-          <tr key={o.code.code}>
-            <td>{LAB_NAMES[o.text ?? ""] ?? o.code.display}<div className="prev">{dayMonth(o.effectiveDateTime)}{o.previous !== null ? `, prev ${fmt(o.previous, o.text === "hba1c" ? 1 : 0)}` : ""}</div></td>
-            <td>{fmt(o.value ?? null, ["hba1c", "creatinine", "bmi"].includes(o.text ?? "") ? 1 : 0)} <span className="muted small">{o.unit === "mm[Hg]" ? "mmHg" : o.unit}</span></td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="headline">
+      <div className="now num"><span className="big">{fmt(st.glucose)}</span> mg/dL <span className="trend">{trendWord(st.trend30)}</span></div>
+      <p className={`lead ${st.tier === "alert" || st.low ? "alert-text" : ""}`}>{sentence}</p>
+      {h120 && <p className="muted">In 2 hours: most likely {fmt(h120.mid)}, very probably between {fmt(h120.lo)} and {fmt(h120.hi)}.</p>}
+    </div>
   );
 }
 
-function EhrColumn({ d }: { d: PatientDetail }) {
-  const year = (s: string | null) => (s ? new Date(s).getFullYear() : "");
-  return (
-    <>
-      <div className="block">
-        <span className="label">Problems</span>
-        <ul className="plain">
-          {d.conditions.map(c => <li key={c.code.code}><span>{c.code.display}</span><span>{c.code.code}, {year(c.onsetDateTime)}</span></li>)}
-        </ul>
-      </div>
-      <div className="block">
-        <span className="label">Medications</span>
-        <ul className="plain">
-          {d.medications.map(m => <li key={m.medication.code}><span>{m.dosage}</span><span>since {year(m.effectiveStart)}</span></li>)}
-          {!d.medications.length && <li><span className="muted">None</span></li>}
-        </ul>
-      </div>
-      <div className="block"><span className="label">Laboratory</span><ObsRows rows={d.labs} /></div>
-      <div className="block"><span className="label">Vitals</span><ObsRows rows={d.vitals} /></div>
-      <div className="block">
-        <span className="label">Genetic markers</span>
-        <table className="kv">
-          <tbody>
-            {d.genetics.map(g => (
-              <tr key={g.rsid}><td>{g.gene}<div className="prev mono">{g.rsid}</div></td>
-                <td><span className="mono">{g.genotype}</span> <span className="muted small">{g.riskAlleles} risk</span></td></tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="block">
-        <span className="label">History</span>
-        <ul className="plain">
-          {[...d.familyHistory, ...d.socialHistory].map(x => <li key={x}><span>{x}</span></li>)}
-        </ul>
-      </div>
-      <div className="block">
-        <span className="label">Twin parameters</span>
-        <table className="kv num">
-          <tbody>
-            <tr><td>Insulin sensitivity</td><td>{fmt(d.twin.insulin_sensitivity_pct_typical)}% of typical</td></tr>
-            <tr><td>Insulin response</td><td>{fmt(d.twin.secretion_pct_typical)}% of typical</td></tr>
-            <tr><td>Basal glucose</td><td>{fmt(d.twin.basal_glucose)} mg/dL</td></tr>
-            <tr><td>Carb absorption half time</td><td>{fmt(d.twin.absorption_half_time_min)} min</td></tr>
-            <tr><td>Fit error, EHR prior to fitted</td><td>{fmt(d.twin.calibration_rmse_prior)} to {fmt(d.twin.calibration_rmse_fit)}</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p className="small muted">{d.consent}</p>
-    </>
-  );
-}
-
-export function TwinTab() {
+export function Overview() {
   const { id = "" } = useParams();
-  const { detail } = usePatient();
   const tl = useLiveData(() => api.timeline(id, 12), [id]).data;
   const fc = useLiveData(() => api.forecast(id), [id]).data;
   const log = useLiveData(() => api.alertLog(id), [id]).data;
   const agp = useLiveData(() => api.agp(id), [id]).data;
-  const st = fc?.available ? fc.status : null;
-  const h120 = fc?.available ? fc.horizons.find(h => h.h === 120) : undefined;
-  const cgmVals = tl?.cgm.filter(r => r.v !== null).map(r => r.v as number) ?? [];
-  const tir = cgmVals.length ? (cgmVals.filter(v => v >= 70 && v <= 180).length / cgmVals.length) * 100 : null;
 
   return (
-    <div className="three twin-layout">
-      <section className="col-ehr" aria-label="Health record"><EhrColumn d={detail} /></section>
-      <section className="col-main" aria-label="Glucose and forecast">
-        <div className="stats num">
-          <div className="stat"><div className="label">Now</div><div className="v">{fmt(st?.glucose)}<small>mg/dL</small></div>
-            <div className="d">{st?.trend30 !== null && st?.trend30 !== undefined ? `${signed(st.trend30)} in 30 min` : ""}</div></div>
-          <div className="stat"><div className="label">Forecast peak, 2 h</div><div className="v">{fmt(st?.peak)}<small>mg/dL</small></div>
-            <div className="d">{st ? `at ${hhmm(minuteToDate(st.peak_minute))}` : ""}</div></div>
-          <div className="stat"><div className="label">Likely range at 2 h</div><div className="v">{fmt(h120?.lo)} to {fmt(h120?.hi)}</div>
-            <div className="d">9 in 10 readings fall inside</div></div>
-          <div className="stat"><div className="label">Time in range, 12 h</div><div className="v">{fmt(tir)}<small>%</small></div>
-            <div className="d">70 to 180 mg/dL</div></div>
-        </div>
+    <div className="overview">
+      <section className="ov-main" aria-label="Glucose">
+        <Headline fc={fc} />
         {tl ? (
           <TableView title="Glucose, last 12 hours and forecast"
-            columns={["Time", "CGM, mg/dL", "Forecast, mg/dL", "Likely range"]}
+            columns={["Time", "Measured, mg/dL", "Forecast, mg/dL", "Likely range"]}
             rows={[...tl.cgm.filter((_, i) => i % 3 === 0).map(r => [hhmm(r.t), fmt(r.v), "", ""]),
                    ...(fc?.available ? fc.points.filter((_, i) => i % 3 === 0).map(p => [hhmm(p.t), "", fmt(p.mid), `${fmt(p.lo)} to ${fmt(p.hi)}`]) : [])]}>
             <ForecastChart tl={tl} fc={fc} />
           </TableView>
-        ) : <SkeletonBlock height={560} label="Loading glucose timeline" />}
-        {agp ? <AgpChart agp={agp} /> : <SkeletonBlock height={320} label="Loading glucose profile" />}
+        ) : <SkeletonBlock height={420} label="Loading glucose" />}
+        <Disclosure title="Two week pattern" hint="time in range, average and variability">
+          {agp ? <AgpChart agp={agp} /> : <SkeletonBlock height={300} label="Loading pattern" />}
+        </Disclosure>
       </section>
-      <section className="col-side" aria-label="Alerts and actions">
-        <div className="block">
-          <span className="label">Active alerts</span>
-          <AlertCards pid={id} cards={fc?.alerts} />
-        </div>
-        {fc?.explanation && (
-          <div className="block">
-            <span className="label">What moves the forecast peak</span>
-            <FactorBars drivers={fc.explanation.drivers} />
-            <p className="small muted" style={{ marginTop: 6 }}>
-              mg/dL added to or taken off the predicted 2 hour peak. Twin inputs by exact Shapley values; learned
-              correction by TreeSHAP. Hover a row for the split.
-            </p>
-          </div>
-        )}
-        <div className="block">
-          <span className="label">Tell the twin about a meal</span>
+      <aside className="ov-side" aria-label="Alerts and actions">
+        <h2>Alerts</h2>
+        <AlertCards pid={id} cards={fc?.alerts} drivers={fc?.explanation?.drivers} />
+        <Disclosure title="Tell the twin about a meal" hint="a planned or eaten meal updates the forecast">
           <MealEntry pid={id} entries={fc?.entries} />
-        </div>
-        <div className="block">
-          <span className="label">Alert log, last 6 hours</span>
+        </Disclosure>
+        <Disclosure title="History" hint="earlier alerts and actions today">
+          <h3 className="mini">Alerts in the last 6 hours</h3>
           {log && log.length ? (
             <table className="log num">
               <tbody>
@@ -191,21 +118,80 @@ export function TwinTab() {
                   <tr key={e.t}>
                     <td>{hhmm(e.t)}</td>
                     <td>
-                      {e.low === "now" && <span className="alert-text">Low {fmt(e.glucose)} now. </span>}
-                      {e.low === "forecast" && <span>Low likely within 60 min. </span>}
-                      {e.tier === "alert" && <span className="alert-text">Alert: above 180 by {e.cross_time}, peak {fmt(e.peak)}.</span>}
-                      {e.tier === "watch" && <span className="ink2">Watch: peak {fmt(e.peak)} at {e.peak_time}.</span>}
+                      {e.low === "now" && <span className="alert-text">Low, {fmt(e.glucose)}. </span>}
+                      {e.low === "forecast" && <span>Low likely within the hour. </span>}
+                      {e.tier === "alert" && <span className="alert-text">High by {e.cross_time}, peak {fmt(e.peak)}.</span>}
+                      {e.tier === "watch" && <span className="ink2">May go high, peak {fmt(e.peak)}.</span>}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          ) : <div className="empty">{log ? "No alerts in the last 6 hours." : "Replaying the last 6 hours."}</div>}
-        </div>
-        <div className="block">
-          <span className="label">Activity</span>
+          ) : <p className="empty">{log ? "None." : "Loading."}</p>}
+          <h3 className="mini">Actions</h3>
           <Activity pid={id} />
-        </div>
+        </Disclosure>
+      </aside>
+    </div>
+  );
+}
+
+function ObsTable({ rows }: { rows: Obs[] }) {
+  return (
+    <table className="kv num">
+      <tbody>
+        {rows.map(o => (
+          <tr key={o.code.code}>
+            <td>{LAB_NAMES[o.text ?? ""] ?? o.code.display}<div className="prev">{dayMonth(o.effectiveDateTime)}{o.previous !== null ? `, before: ${fmt(o.previous, o.text === "hba1c" ? 1 : 0)}` : ""}</div></td>
+            <td>{fmt(o.value ?? null, ["hba1c", "creatinine", "bmi"].includes(o.text ?? "") ? 1 : 0)} <span className="muted">{o.unit === "mm[Hg]" ? "mmHg" : o.unit}</span></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+export function Record() {
+  const { detail: d } = usePatient();
+  const year = (s: string | null) => (s ? new Date(s).getFullYear() : "");
+  return (
+    <div className="record">
+      <section className="block">
+        <h2>Problems</h2>
+        <ul className="plain">{d.conditions.map(c => <li key={c.code.code}><span>{c.code.display}</span><span>since {year(c.onsetDateTime)}</span></li>)}</ul>
+      </section>
+      <section className="block">
+        <h2>Medicines</h2>
+        <ul className="plain">
+          {d.medications.map(m => <li key={m.medication.code}><span>{m.dosage}</span><span>since {year(m.effectiveStart)}</span></li>)}
+          {!d.medications.length && <li><span className="muted">None</span></li>}
+        </ul>
+      </section>
+      <section className="block"><h2>Blood tests</h2><ObsTable rows={d.labs} /></section>
+      <section className="block"><h2>Measurements</h2><ObsTable rows={d.vitals} /></section>
+      <section className="block">
+        <h2>Family and lifestyle</h2>
+        <ul className="plain">{[...d.familyHistory, ...d.socialHistory].map(x => <li key={x}><span>{x}</span></li>)}</ul>
+      </section>
+      <section className="block">
+        <h2>Genetic markers</h2>
+        <table className="kv"><tbody>
+          {d.genetics.map(g => <tr key={g.rsid}><td>{g.gene}<div className="prev">{g.rsid}</div></td><td>{g.genotype}, {g.riskAlleles} risk {g.riskAlleles === 1 ? "copy" : "copies"}</td></tr>)}
+        </tbody></table>
+      </section>
+      <section className="block">
+        <h2>What the twin has learned</h2>
+        <table className="kv num"><tbody>
+          <tr><td>Insulin sensitivity</td><td>{fmt(d.twin.insulin_sensitivity_pct_typical)}% of typical</td></tr>
+          <tr><td>Insulin response to food</td><td>{fmt(d.twin.secretion_pct_typical)}% of typical</td></tr>
+          <tr><td>Resting glucose level</td><td>{fmt(d.twin.basal_glucose)} mg/dL</td></tr>
+          <tr><td>Carbohydrate absorption half time</td><td>{fmt(d.twin.absorption_half_time_min)} min</td></tr>
+          <tr><td>Fit error, first week</td><td>{fmt(d.twin.calibration_rmse_prior)} to {fmt(d.twin.calibration_rmse_fit)} mg/dL</td></tr>
+        </tbody></table>
+      </section>
+      <section className="block">
+        <h2>Data and consent</h2>
+        <p className="muted">{d.device}. {d.consent}. Synthetic record, held out from model training.</p>
       </section>
     </div>
   );

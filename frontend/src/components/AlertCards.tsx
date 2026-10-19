@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { api, hhmm, type AlertCard } from "../api";
+import { api, hhmm, type AlertCard, type Driver } from "../api";
 import { useLive } from "../live";
+import { FactorBars } from "./FactorBars";
 
 const SNOOZE: [number, string][] = [[30, "30 min"], [60, "1 h"], [120, "2 h"], [240, "4 h"]];
 
@@ -14,12 +15,12 @@ function AckControl({ pid, card }: { pid: string; card: AlertCard }) {
   if (card.ack) {
     return (
       <div className="ack">
-        Acknowledged by {card.ack.by} at {hhmm(card.ack.t!)}; quiet until {hhmm(card.ack.until_t!)}.
+        Seen by {card.ack.by} at {hhmm(card.ack.t!)}; quiet until {hhmm(card.ack.until_t!)}.
         {card.ack.note && <> &ldquo;{card.ack.note}&rdquo;</>}
       </div>
     );
   }
-  if (!open) return <button className="btn small-btn" onClick={() => setOpen(true)}>Acknowledge</button>;
+  if (!open) return <button className="btn small-btn" onClick={() => setOpen(true)}>Mark as seen</button>;
   const submit = () => {
     setBusy(true);
     api.ack(pid, { kind: card.kind, by: clinician, snooze_minutes: snooze, note }).then(() => { setOpen(false); refresh(); })
@@ -35,14 +36,14 @@ function AckControl({ pid, card }: { pid: string; card: AlertCard }) {
       <input type="text" placeholder="Note (optional)" value={note} maxLength={280} onChange={e => setNote(e.target.value)}
         aria-label="Acknowledgement note" />
       <div style={{ display: "flex", gap: 6 }}>
-        <button className="btn primary" disabled={busy} onClick={submit}>Acknowledge as {clinician}</button>
+        <button className="btn primary" disabled={busy} onClick={submit}>Mark as seen by {clinician}</button>
         <button className="btn" onClick={() => setOpen(false)}>Cancel</button>
       </div>
     </div>
   );
 }
 
-export function AlertCards({ pid, cards }: { pid: string; cards: AlertCard[] | undefined }) {
+export function AlertCards({ pid, cards, drivers }: { pid: string; cards: AlertCard[] | undefined; drivers?: Driver[] }) {
   if (!cards) return <div className="skeleton-block" style={{ height: 96 }} aria-busy="true" />;
   return (
     <div aria-live="polite">
@@ -50,10 +51,21 @@ export function AlertCards({ pid, cards }: { pid: string; cards: AlertCard[] | u
         <div key={`${a.kind}-${i}`} className={`card ${a.ack ? "acked" : a.tier}`}>
           <div className="t">{a.title}</div>
           <div className="d">{a.detail}</div>
-          {a.reason && <div className="r">{a.reason}</div>}
+          {(a.reason || (a.kind === "spike" && drivers)) && (
+            <details className="why">
+              <summary>Why?</summary>
+              {a.reason && <p className="r">{a.reason}</p>}
+              {a.kind === "spike" && drivers && (
+                <>
+                  <FactorBars drivers={drivers} />
+                  <p className="small muted">mg/dL each factor adds to or takes off the expected peak.</p>
+                </>
+              )}
+            </details>
+          )}
           <AckControl pid={pid} card={a} />
         </div>
-      )) : <div className="empty">No active alerts. Glucose expected to stay between 70 and 180 mg/dL for 2 h.</div>}
+      )) : <div className="empty">No alerts. Glucose expected to stay between 70 and 180 for the next 2 hours.</div>}
     </div>
   );
 }
