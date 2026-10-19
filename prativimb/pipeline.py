@@ -9,8 +9,9 @@ def main(argv: list[str]) -> None:
     stage = argv[0] if argv else "all"
     t0 = time.time()
     steps = {
-        "data": ["data"], "twin": ["twin"], "glucose": ["glucose"], "cardio": ["cardio"], "report": ["report"],
-        "train": ["twin", "glucose", "cardio", "report"], "all": ["data", "twin", "glucose", "cardio", "report"],
+        "data": ["data"], "twin": ["twin"], "glucose": ["glucose"], "hypo": ["hypo"], "cardio": ["cardio"],
+        "report": ["report"], "train": ["twin", "glucose", "hypo", "cardio", "report"],
+        "all": ["data", "twin", "glucose", "hypo", "cardio", "report"],
     }[stage]
     for s in steps:
         print(f"== {s}")
@@ -23,6 +24,9 @@ def main(argv: list[str]) -> None:
         elif s == "glucose":
             from prativimb.ml import glucose
             glucose.run()
+        elif s == "hypo":
+            from prativimb.ml import hypo
+            hypo.run()
         elif s == "cardio":
             from prativimb.ml import cardio
             cardio.run()

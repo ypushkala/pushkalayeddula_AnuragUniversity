@@ -16,7 +16,8 @@ from fastapi.staticfiles import StaticFiles
 from prativimb import config
 from prativimb.api import note_pdf
 from prativimb.api.clock import DemoClock
-from prativimb.api.schemas import ClockUpdate, PatientDetail, WhatIfRequest
+from prativimb.api.schemas import Acknowledge, ClockUpdate, MealEntry, PatientDetail, WhatIfRequest
+from prativimb.data.cohort import MEAL_TYPES
 from prativimb.api.services import AppState, clean, iso
 
 warnings.filterwarnings("ignore")
@@ -143,6 +144,42 @@ def alert_log(pid: str, hours: int = Query(6, ge=1, le=24)):
 @app.post("/api/patients/{pid}/whatif")
 def whatif(pid: str, req: WhatIfRequest):
     return state().whatif(check(pid), CLOCK.minute(), req.model_dump())
+
+
+@app.get("/api/patients/{pid}/levers")
+def levers(pid: str, horizon_h: int = Query(6, ge=6, le=24), scope: str = Query("next", pattern="^(next|all)$")):
+    return state().rank_levers(check(pid), CLOCK.minute(), horizon_h, scope)
+
+
+@app.get("/api/meal-types")
+def meal_types():
+    return [{"kind": k, "label": v[0], "speed": v[1]} for k, v in MEAL_TYPES.items()]
+
+
+@app.post("/api/patients/{pid}/meals")
+def add_meal(pid: str, e: MealEntry):
+    if e.kind not in MEAL_TYPES:
+        raise HTTPException(422, f"Unknown meal kind {e.kind}")
+    now = int(CLOCK.minute())
+    minute = (now + e.minutes_from_now) // 5 * 5
+    return state().store.add_meal(check(pid), minute, e.carbs, e.kind, e.label, e.by, now)
+
+
+@app.delete("/api/patients/{pid}/meals/{meal_id}")
+def remove_meal(pid: str, meal_id: str, by: str = Query("Clinician", max_length=60)):
+    if not state().store.remove_meal(check(pid), meal_id, by, int(CLOCK.minute())):
+        raise HTTPException(404, "No such meal entry")
+    return {"removed": meal_id}
+
+
+@app.post("/api/patients/{pid}/ack")
+def acknowledge(pid: str, a: Acknowledge):
+    return state().store.acknowledge(check(pid), a.kind, a.by, int(CLOCK.minute()), a.snooze_minutes, a.note)
+
+
+@app.get("/api/audit")
+def audit(pid: str | None = None, limit: int = Query(200, ge=1, le=2000)):
+    return state().store.audit(pid, limit)
 
 
 @app.get("/api/patients/{pid}/cardio")

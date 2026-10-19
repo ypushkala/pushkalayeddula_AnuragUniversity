@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 
 import duckdb
@@ -12,6 +12,8 @@ import numpy as np
 import pandas as pd
 
 from prativimb import config
+from prativimb.api.store import ClinicalStore
+from prativimb.data.cohort import MEAL_TYPES
 from prativimb.ml import conformal
 from prativimb.ml import explain as explain_mod
 from prativimb.ml.features import glucose_features
@@ -55,6 +57,7 @@ class Row:
     hi90: dict
     lo_alert: dict
     qlo: dict
+    low_p: float = 0.0
 
 
 class AppState:
@@ -85,17 +88,39 @@ class AppState:
         self.cardio_daily = pd.read_parquet(config.ARTIFACT_DIR / "cardio_daily.parquet")
         self.cardio_windows = pd.read_parquet(config.ARTIFACT_DIR / "cardio_windows.parquet")
         self.metrics = json.loads((config.REPORT_DIR / "metrics.json").read_text())
-        self._pp: dict[str, forecast.Prepared] = {}
-        self._ward_cache: tuple[int, list] | None = None
+        self._pp: dict[tuple, forecast.Prepared] = {}
+        self._ward_cache: tuple[tuple, list] | None = None
+        self.store = ClinicalStore()
+        low_path = config.ARTIFACT_DIR / "low_model.joblib"
+        self.low = joblib.load(low_path) if low_path.exists() else None
+        self._asleep: dict[str, np.ndarray] = {}
 
     # basics --------------------------------------------------------------------------
     def theta(self, pid: str) -> np.ndarray:
         return self.twins.loc[pid, PARAMS].to_numpy(float)
 
-    def pp(self, pid: str) -> forecast.Prepared:
-        if pid not in self._pp:
-            self._pp[pid] = forecast.prepare(self.S[pid])
-        return self._pp[pid]
+    def pp(self, pid: str, minute: float | None = None) -> forecast.Prepared:
+        """Prepared inputs, including meals entered by a clinician or patient up to the clock time."""
+        entries = self.store.meals_for(pid, minute) if minute is not None else []
+        key = (pid, tuple(e["id"] for e in entries))
+        if key not in self._pp:
+            s = self.S[pid]
+            logged = [e for e in entries if e["type"] == "logged"]
+            if logged:
+                carbs, maf = s.carbs.copy(), s.meal_af.copy()
+                for e in logged:
+                    i = int(e["minute"]) // STEP
+                    carbs[i] += e["carbs"]
+                    maf[i] = MEAL_TYPES.get(e["kind"], ("", 1.0))[1]
+                extra = pd.DataFrame([{"pid": pid, "minute": e["minute"], "carbs": e["carbs"], "kind": e["kind"],
+                                       "description": e["label"]} for e in logged])
+                ml = pd.concat([s.meal_log, extra], ignore_index=True).sort_values("minute")
+                s = replace(s, carbs=carbs, meal_af=maf, meal_log=ml)
+            pp = forecast.prepare(s)
+            pp.extra["planned"] = [(e["minute"], e["carbs"], MEAL_TYPES.get(e["kind"], ("", 1.0))[1], e["label"])
+                                   for e in entries if e["type"] == "planned"]
+            self._pp[key] = pp
+        return self._pp[key]
 
     def origin(self, pid: str, minute: float) -> int | None:
         """Latest step at or before the clock with a CGM reading in the last 30 minutes."""
@@ -117,7 +142,7 @@ class AppState:
             k = self.origin(pid, minute)
             if k is None or k < forecast.W:
                 continue
-            pp, th = self.pp(pid), self.theta(pid)
+            pp, th = self.pp(pid, minute), self.theta(pid)
             G = forecast.forecast(pp, th, np.array([k]), 24)
             f = glucose_features(pp, np.array([k]), G, th)
             rows[pid] = Row(pid, k, f, G[0], {}, {}, {}, {}, {})
@@ -125,6 +150,10 @@ class AppState:
         if not frames:
             return rows
         X = pd.concat(frames, ignore_index=True)
+        if self.low is not None:
+            lp = self.low["model"].predict_proba(X[self.low["features"]])[:, 1]
+            for i, pid in enumerate(rows):
+                rows[pid].low_p = float(lp[i])
         b = self.bundle
         for h in config.HORIZONS:
             m = b["models"][h]
@@ -170,18 +199,26 @@ class AppState:
             out["cross_minute"] = (r.k + int(above[0])) * STEP
         elif cg > config.SPIKE_THRESHOLD:
             out["tier"] = "high"
-        lows = np.flatnonzero(mid < config.LOW_THRESHOLD)
+        out["low_p"] = r.low_p
         if cg < config.LOW_THRESHOLD:
-            out["low"] = "now"
-        elif len(lows):
+            out["low"] = "artefact" if self.suspect_compression(r.pid, r.k) else "now"
+        elif self.low is not None and r.low_p >= self.low["threshold"]:
             out["low"] = "forecast"
-            out["low_minute"] = (r.k + int(lows[0])) * STEP
-            out["low_value"] = float(mid.min())
+            lows = np.flatnonzero(mid < config.LOW_THRESHOLD + 5)
+            j = int(lows[0]) if len(lows) else int(np.argmin(mid[:13]))
+            out["low_minute"] = (r.k + j) * STEP
+            out["low_value"] = float(mid[:13].min())
         return out
+
+    def suspect_compression(self, pid: str, k: int) -> bool:
+        from prativimb.ml import hypo
+        if pid not in self._asleep:
+            self._asleep[pid] = hypo.asleep_mask(self.S[pid])
+        return hypo.suspect_now(self.S[pid].cgm, self._asleep[pid], k)
 
     # ward ----------------------------------------------------------------------------
     def ward(self, minute: float) -> list[dict]:
-        step = int(minute // STEP)
+        step = (int(minute // STEP), self.store.version)
         with self.lock:
             if self._ward_cache and self._ward_cache[0] == step:
                 return self._ward_cache[1]
@@ -199,12 +236,19 @@ class AppState:
             last_sync = int(valid[-1]) * STEP if len(valid) else None
             cv = self.cardio_now(pid, minute)
             st = self.status(rows[pid]) if pid in rows else None
+            acks = {k: self.store.active_ack(pid, k, minute) for k in ("spike", "low", "cardio")}
             pr = 0
             if st:
-                pr += {"alert": 40, "watch": 10, "high": 6}.get(st["tier"], 0) + (25 if st["low"] else 0)
+                st["ack"] = acks["spike"] if st["tier"] == "alert" else None
+                if st["low"] == "artefact":
+                    st["low"], st["artefact"] = None, True
+                st["low_ack"] = acks["low"] if st["low"] else None
+                pr += {"alert": 8 if st["ack"] else 40, "watch": 10, "high": 6}.get(st["tier"], 0)
+                pr += (5 if st["low_ack"] else 25) if st["low"] else 0
                 pr += max(st["peak"] - 140, 0) / 10
+            cv["ack"] = acks["cardio"] if cv["flag"] else None
             if cv["flag"]:
-                pr += 30
+                pr += 6 if cv["ack"] else 30
             pr += cv["risk"] * 20 if cv["risk"] is not None else 0
             out.append(clean({
                 "id": pid, "name": f"{p.given} {p.family}", "age": int(e.age), "sex": "M" if p.sex == "male" else "F",
@@ -366,6 +410,11 @@ class AppState:
         ks = np.arange(k0, k1 + 1)
         lo_m, hi_m = k0 * STEP, minute
         m = self.meals[(self.meals.pid == pid) & (self.meals.minute >= lo_m) & (self.meals.minute <= hi_m)]
+        entered = [e for e in self.store.meals_for(pid, minute) if e["type"] == "logged" and lo_m <= e["minute"] <= hi_m]
+        if entered:
+            m = pd.concat([m, pd.DataFrame([{"pid": pid, "minute": e["minute"], "carbs": e["carbs"], "kind": e["kind"],
+                                             "description": f"{e['label']} (entered by {e['by']})"} for e in entered])],
+                          ignore_index=True)
         dz = self.doses[(self.doses.pid == pid) & (self.doses.minute >= lo_m) & (self.doses.minute <= hi_m)]
         sg = self.segments[(self.segments.pid == pid) & (self.segments.end >= lo_m) & (self.segments.start <= hi_m)]
         return clean({
@@ -398,9 +447,10 @@ class AppState:
             hs = list(config.HORIZONS)
             peak_h = hs[int(np.argmin([abs(h - (st["peak_minute"] - r.k * STEP)) for h in hs]))]
             feats = r.feats.iloc[0].to_dict()
-            ex = explain_mod.explain(self.pp(pid), self.theta(pid), r.k, self.bundle, r.feats, feats, peak_h)
+            ex = explain_mod.explain(self.pp(pid, minute), self.theta(pid), r.k, self.bundle, r.feats, feats, peak_h)
             out["explanation"] = ex
         out["alerts"] = self.alert_cards(pid, minute, st, out.get("explanation"))
+        out["entries"] = [{**e, "t": iso(e["minute"])} for e in self.store.meals_for(pid, minute)]
         return clean(out)
 
     def alert_log(self, pid: str, minute: float, hours: int = 6, every: int = 15) -> list[dict]:
@@ -420,6 +470,13 @@ class AppState:
         return clean(out)
 
     def alert_cards(self, pid: str, minute: float, st: dict, ex: dict | None) -> list[dict]:
+        cards = self._alert_cards(pid, minute, st, ex)
+        for c in cards:
+            a = self.store.active_ack(pid, c["kind"], minute) if c["kind"] in ("spike", "low", "cardio") else None
+            c["ack"] = {**a, "t": iso(a["minute"]), "until_t": iso(a["until"])} if a else None
+        return cards
+
+    def _alert_cards(self, pid: str, minute: float, st: dict, ex: dict | None) -> list[dict]:
         cards = []
         sent = ex["sentence"] if ex else ""
         if st["tier"] in ("alert", "watch"):
@@ -431,16 +488,24 @@ class AppState:
                           + (f" At least a {(1 + self.alert_cov) / 2:.0%} chance of exceeding 180." if st["tier"] == "alert" else ""),
                 "reason": sent,
             })
-        if st["low"]:
+        if st["low"] in ("now", "forecast"):
             cards.append({
-                "kind": "low", "tier": "alert" if st["low"] == "now" else "watch",
-                "title": "Glucose below 70 now" if st["low"] == "now" else "Glucose may fall below 70",
+                "kind": "low", "tier": "alert",
+                "title": "Glucose below 70 now" if st["low"] == "now" else "Glucose below 70 likely within 60 min",
                 "detail": (f"Current reading {st['glucose']:.0f} mg/dL." if st["low"] == "now" else
-                           f"Forecast low {st.get('low_value', 0):.0f} mg/dL around {hhmm(st['low_minute'])}."),
+                           f"Low glucose model: {st['low_p'] * 100:.0f}% probability; forecast minimum "
+                           f"{st.get('low_value', 0):.0f} mg/dL around {hhmm(st['low_minute'])}."),
                 "reason": "",
             })
             if st["peak"] > config.SPIKE_THRESHOLD:
                 cards[-1]["detail"] += f" Rebound to {st['peak']:.0f} mg/dL expected after the next meal."
+        if st["low"] == "artefact":
+            cards.append({
+                "kind": "artefact", "tier": "info", "title": "Low reading, probably sensor compression",
+                "detail": f"{st['glucose']:.0f} mg/dL reached by a fall of more than 1 mg/dL per minute during sleep. "
+                          "Pressure on the sensor gives this pattern; check again in 15 minutes or confirm with a fingerstick.",
+                "reason": "",
+            })
         cv = self.cardio_now(pid, minute)
         if cv.get("flag"):
             sc = self.cardio_scores[(self.cardio_scores.pid == pid) & (self.cardio_scores.day == cv["day"])]
@@ -460,35 +525,72 @@ class AppState:
 
     # what if -------------------------------------------------------------------------
     def whatif(self, pid: str, minute: float, req: dict) -> dict:
+        req = dict(req)
+        horizon_h = int(req.pop("horizon_h", 6) or 6)
         k = self.origin(pid, minute)
         if k is None:
             return {"available": False}
-        pp, th = self.pp(pid), self.theta(pid)
-        H = 72
-        base, info0 = forecast.simulate_scenario(pp, th, k, H, forecast.Scenario())
-        sc = forecast.Scenario(**req)
-        alt, info = forecast.simulate_scenario(pp, th, k, H, sc)
+        pp, th = self.pp(pid, minute), self.theta(pid)
+        H = horizon_h * 60 // STEP
+        scope = req.get("scope", "next")
+        base, info0 = forecast.simulate_scenario(pp, th, k, H, forecast.Scenario(scope=scope))
+        alt, info = forecast.simulate_scenario(pp, th, k, H, forecast.Scenario(**req))
 
         def summary(g):
             g = np.asarray(g)[1:]
             j = int(np.argmax(g))
             return {"peak": float(g[j]), "peak_time": hhmm((k + j + 1) * STEP),
                     "tar_min": int((g > 180).sum() * STEP), "tbr_min": int((g < 70).sum() * STEP),
-                    "mean": float(g.mean()), "auc_above_180": float(np.maximum(g - 180, 0).sum() * STEP)}
+                    "tir_pct": float(np.mean((g >= 70) & (g <= 180)) * 100),
+                    "mean": float(g.mean()), "auc_above_180": float(np.maximum(g - 180, 0).sum() * STEP / 60)}
         b, a = summary(base), summary(alt)
         target = None
         if info0.get("target_step") is not None:
             ts = info0["target_step"]
             target = {"time": hhmm((k + ts) * STEP), "carbs": info0["target_carbs"],
                       "new_time": hhmm((k + info.get("meal_step", ts)) * STEP)}
+        note = ("Mechanistic twin only. The learned correction is trained for 2 h forecasts and cancels in the difference.")
+        if horizon_h > 6:
+            note += (" Beyond about 6 hours absolute levels drift (the twin runs high for some patients); read the "
+                     "difference between the two curves, not the level.")
         return clean({
-            "available": True, "origin": iso(k * STEP), "horizon_h": 6, "solver": "scipy.integrate.solve_ivp (RK45)",
+            "available": True, "origin": iso(k * STEP), "horizon_h": horizon_h, "scope": scope,
+            "solver": "scipy.integrate.solve_ivp (RK45)",
             "times": [iso((k + j) * STEP) for j in range(H + 1)], "baseline": list(base), "scenario": list(alt),
             "baseline_summary": b, "scenario_summary": a,
-            "delta": {"peak": a["peak"] - b["peak"], "tar_min": a["tar_min"] - b["tar_min"], "mean": a["mean"] - b["mean"]},
-            "target_meal": target, "request": req,
-            "note": "Mechanistic twin only. The learned correction is trained for 2 h forecasts and cancels in the difference.",
+            "delta": {"peak": a["peak"] - b["peak"], "tar_min": a["tar_min"] - b["tar_min"], "mean": a["mean"] - b["mean"],
+                      "auc_above_180": a["auc_above_180"] - b["auc_above_180"], "tir_pct": a["tir_pct"] - b["tir_pct"]},
+            "target_meal": target, "meals_changed": info.get("meals_changed", 0), "request": {**req, "horizon_h": horizon_h},
+            "note": note,
         })
+
+    LEVERS = [
+        ("Walk 15 min after the meal", {"walk_minutes": 15}),
+        ("Walk 30 min after the meal", {"walk_minutes": 30}),
+        ("Millets instead of white rice", {"swap": "millet"}),
+        ("Brown rice instead of white rice", {"swap": "brown_rice"}),
+        ("Roti instead of rice", {"swap": "roti"}),
+        ("Half the portion", {"swap": "half_portion"}),
+        ("Meal 1 h earlier", {"shift_hours": -1.0}),
+        ("Sleep 7.5 h for three nights", {"sleep_hours": 7.5}),
+        ("Walk 15 min and millets", {"walk_minutes": 15, "swap": "millet"}),
+    ]
+
+    def rank_levers(self, pid: str, minute: float, horizon_h: int = 6, scope: str = "next") -> dict:
+        """Try every lever on this patient's twin and rank by how much each lowers the peak and time above 180."""
+        rows = []
+        for label, req in self.LEVERS:
+            r = self.whatif(pid, minute, {**req, "horizon_h": horizon_h, "scope": scope})
+            if not r.get("available"):
+                return {"available": False, "levers": []}
+            d = r["delta"]
+            rows.append({"label": label, "request": req, "peak": d["peak"], "tar_min": d["tar_min"],
+                         "auc_above_180": d["auc_above_180"], "mean": d["mean"],
+                         "combined": "and" in label})
+        key = (lambda x: (x["auc_above_180"], x["peak"])) if horizon_h > 6 else (lambda x: (x["peak"], x["tar_min"]))
+        rows.sort(key=key)
+        return clean({"available": True, "horizon_h": horizon_h, "scope": scope, "levers": rows,
+                      "target_meal": r.get("target_meal")})
 
     # note ----------------------------------------------------------------------------
     def note(self, pid: str, minute: float) -> dict:
@@ -508,9 +610,7 @@ class AppState:
                                  (self.meals.minute >= (minute // 1440) * 1440)]
         missed = self.doses[(self.doses.pid == pid) & (self.doses.minute <= minute) &
                             (self.doses.minute >= minute - 1440) & (~self.doses.taken)]
-        walk = self.whatif(pid, minute, {"walk_minutes": 15})
-        millet = self.whatif(pid, minute, {"swap": "millet"})
-        early = self.whatif(pid, minute, {"shift_hours": -1.0})
+        ranked = self.rank_levers(pid, minute)
         S_ = [
             f"Occupation: {det['patient']['occupation']}.",
             f"Sleep last 3 nights: {', '.join(f'{n / 60:.1f} h' for n in nights.total_sleep_min)}.",
@@ -540,19 +640,16 @@ class AppState:
         A_.append(f"Twin calibration: insulin sensitivity about {tw['insulin_sensitivity_pct_typical']:.0f}% of a typical adult "
                   f"without diabetes; fit error {tw['calibration_rmse_fit']:.0f} mg/dL over the calibration week.")
         P_ = []
-        if walk.get("available") and walk["delta"]["peak"] < -3:
-            P_.append(f"Simulated: a 15 minute walk after the next main meal lowers the predicted peak by "
-                      f"{-walk['delta']['peak']:.0f} mg/dL and time above 180 by {-walk['delta']['tar_min']:.0f} min.")
-        if millet.get("available") and millet["delta"]["peak"] < -5:
-            P_.append(f"Simulated: millets instead of white rice at that meal lowers the predicted peak by "
-                      f"{-millet['delta']['peak']:.0f} mg/dL.")
-        if early.get("available") and early.get("target_meal"):
-            d = early["delta"]["peak"]
-            if d < -5:
-                P_.append(f"Simulated: eating that meal 1 h earlier lowers the peak by {-d:.0f} mg/dL.")
-            elif d > 3:
-                P_.append(f"Simulated: eating that meal earlier does not help tonight (peak {d:+.0f} mg/dL); "
-                          "glucose from the previous meal has not settled.")
+        helpful = [r for r in ranked.get("levers", []) if r["peak"] < -5 and not r["combined"]][:3]
+        if helpful:
+            meal = ranked.get("target_meal") or {}
+            P_.append("Simulated levers for the next main meal" + (f" ({meal.get('time')})" if meal else "") + ", ranked: "
+                      + "; ".join(f"{r['label'].lower()}: peak {r['peak']:+.0f} mg/dL, time above 180 {r['tar_min']:+.0f} min"
+                                  for r in helpful) + ".")
+        early = next((r for r in ranked.get("levers", []) if r["request"] == {"shift_hours": -1.0}), None)
+        if early and early["peak"] > 3:
+            P_.append(f"Simulated: eating that meal earlier does not help tonight (peak {early['peak']:+.0f} mg/dL); "
+                      "glucose from the previous meal has not settled.")
         if cv.get("flag"):
             P_.append("Consider clinical review of cardiovascular symptoms, blood pressure and ECG given the wearable risk flag.")
         P_.append("Review with the patient; the twin's simulations are hypotheses, not prescriptions.")

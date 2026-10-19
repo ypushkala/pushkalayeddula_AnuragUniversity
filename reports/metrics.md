@@ -43,8 +43,16 @@ Two tiers are deployed. **Watch**: the hybrid point forecast crosses 180 within 
 
 The lower bound tier trades lead time for precision: at 2 hours the interval is wide, so a confident call usually comes 25 to 35 minutes before onset. The watch tier gives the longer warning with more false alarms, which is why it is not pushed.
 
+### Low glucose (below 70 mg/dL)
 
-Low glucose (secondary): 732 episodes below 70 mg/dL in test patients; point forecast below 70 within 2 h flagged 22% in advance (median lead 40 min, 0.09 false alarms per patient day). Most lows in this cohort are brief dips in people without diabetes and overnight sensor compression artefacts, which a meal driven model cannot anticipate. Low forecasting is a secondary output, not a validated feature.
+Lows are a separate event with their own model: a LightGBM classifier for glucose below 70 mg/dL within 60 minutes (two consecutive readings), trained on labels cleaned of sensor compression artefacts. Its threshold (0.95) is chosen on calibration patients as the most sensitive with at most 0.25 false alarms per patient day; lows are the costlier miss, so this budget is looser than the spike alert's.
+
+| Low policy, test patients | Lows | Flagged in advance | Precision | Median lead | False alarms per patient day |
+|---|---:|---:|---:|---:|---:|
+| **Low glucose classifier (deployed)** | 720 | 37% | 61% | 10 min | 0.19 |
+| Hybrid point forecast below 70 | 720 | 18% | 68% | 18 min | 0.07 |
+
+Compression artefact filter, checked against the dips the sensor simulator injected: it finds 144 of 235 dips that reach below 90 mg/dL, and 63% of the readings it flags are real artefacts. In the dashboard a fast fall during sleep is reported as probable sensor compression rather than a low. Most remaining lows are brief level 1 dips in people without diabetes, which a meal driven model cannot anticipate.
 
 ![Alert trade off](figures/alert_tradeoff.png)
 

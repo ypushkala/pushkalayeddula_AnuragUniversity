@@ -338,13 +338,25 @@ def write_markdown(m: dict) -> str:
     L.append("\nThe lower bound tier trades lead time for precision: at 2 hours the interval is wide, so a confident "
              "call usually comes 25 to 35 minutes before onset. The watch tier gives the longer warning with more "
              "false alarms, which is why it is not pushed.\n")
-    lw = m["low_alerts"]
-    L.append(f"\nLow glucose (secondary): {lw['events']} episodes below 70 mg/dL in test patients; "
-             f"point forecast below 70 within 2 h flagged {lw['sensitivity'] * 100:.0f}% in advance "
-             f"(median lead {lw['median_lead_min'] or 0:.0f} min, {lw['false_alarms_per_patient_day']:.2f} false alarms per patient day). "
-             "Most lows in this cohort are brief dips in people without diabetes and overnight sensor compression "
-             "artefacts, which a meal driven model cannot anticipate. Low forecasting is a secondary output, not a "
-             "validated feature.\n")
+    lw = m.get("hypo")
+    if lw:
+        c_, o_, ad = lw["test_classifier"], lw["test_point_forecast"], lw["artefact_detector"]
+        L.append("### Low glucose (below 70 mg/dL)\n")
+        L.append("Lows are a separate event with their own model: a LightGBM classifier for glucose below 70 mg/dL "
+                 "within 60 minutes (two consecutive readings), trained on labels cleaned of sensor compression "
+                 f"artefacts. Its threshold ({lw['threshold']}) is chosen on calibration patients as the most sensitive "
+                 f"with at most {lw['fa_budget']:.2f} false alarms per patient day; lows are the costlier miss, so this budget "
+                 "is looser than the spike alert's.\n")
+        L.append("| Low policy, test patients | Lows | Flagged in advance | Precision | Median lead | False alarms per patient day |")
+        L.append("|---|---:|---:|---:|---:|---:|")
+        for name, r in (("**Low glucose classifier (deployed)**", c_), ("Hybrid point forecast below 70", o_)):
+            L.append(f"| {name} | {r['events']} | {r['sensitivity'] * 100:.0f}% | {r['precision'] * 100:.0f}% | "
+                     f"{r['median_lead_min'] or 0:.0f} min | {r['false_alarms_per_patient_day']:.2f} |")
+        L.append(f"\nCompression artefact filter, checked against the dips the sensor simulator injected: it finds "
+                 f"{ad['dips_found']} of {ad['dips']} dips that reach below 90 mg/dL, and {ad['reading_precision'] * 100:.0f}% "
+                 "of the readings it flags are real artefacts. In the dashboard a fast fall during sleep is reported as "
+                 "probable sensor compression rather than a low. Most remaining lows are brief level 1 dips in people "
+                 "without diabetes, which a meal driven model cannot anticipate.\n")
     L.append("![Alert trade off](figures/alert_tradeoff.png)\n")
     L.append("### Conformal prediction intervals (90% target)\n")
     L.append("| Horizon | CQR coverage | CQR median width | Plain split coverage | Plain split width | Coverage below 70 | 70 to 180 | above 180 |")
@@ -437,6 +449,8 @@ def run(verbose: bool = True) -> dict:
     lows = evaluate_alerts(t, cgm, low_alert, onset_fn=low_onsets)
     conf = conformal_summary(t, {h: bundle["models"][h]["abs_q"] for h in config.HORIZONS})
 
+    hypo_path = config.ARTIFACT_DIR / "low_metrics.json"
+    hypo_metrics = json.loads(hypo_path.read_text()) if hypo_path.exists() else None
     cardio_model = joblib.load(config.ARTIFACT_DIR / "cardio_model.joblib")
     scores = pd.read_parquet(config.ARTIFACT_DIR / "cardio_scores.parquet")
     daily = pd.read_parquet(config.ARTIFACT_DIR / "cardio_daily.parquet")
@@ -447,7 +461,7 @@ def run(verbose: bool = True) -> dict:
     metrics = {
         "generated": datetime.now().strftime("%d %b %Y"),
         "split": {f"{k}_patients": sum(v == k for v in split.values()) for k in ("train", "calibration", "test")},
-        "glucose": acc, "alerts": policies, "alert_level": alert_cfg, "alert_curve": curve, "low_alerts": lows, "conformal": conf, "cardio": cm,
+        "glucose": acc, "alerts": policies, "alert_level": alert_cfg, "alert_curve": curve, "low_alerts": lows, "hypo": hypo_metrics, "conformal": conf, "cardio": cm,
         "twin": {"n": len(twins), "rmse_prior_median": float(twins.rmse_prior.median()),
                  "rmse_fit_median": float(twins.rmse_fit.median())},
         "limitations": LIMITATIONS,

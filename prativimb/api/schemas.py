@@ -98,3 +98,20 @@ class WhatIfRequest(BaseModel):
     missed_dose: bool = False
     sleep_hours: float | None = Field(None, ge=3, le=10)
     night_shift: bool = False
+    scope: Literal["next", "all"] = "next"
+    horizon_h: Literal[6, 24] = 6
+
+
+class MealEntry(BaseModel):
+    minutes_from_now: int = Field(..., ge=-360, le=1440, description="Negative for a meal already eaten")
+    carbs: float = Field(..., gt=0, le=250)
+    kind: str = "rice_meal"
+    label: str = Field("Meal", max_length=80)
+    by: str = Field("Clinician", max_length=60)
+
+
+class Acknowledge(BaseModel):
+    kind: Literal["spike", "low", "cardio"]
+    by: str = Field(..., min_length=1, max_length=60)
+    snooze_minutes: int = Field(60, ge=0, le=720)
+    note: str = Field("", max_length=280)
