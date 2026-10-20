@@ -62,7 +62,7 @@ Produces `data/raw/` (FHIR style EHR bundles, device style exports for hero pati
 - [x] README with every mandatory section in the required order.
 - [x] `docs/architecture.pdf` and `.png` generated from code.
 - [x] `docs/presentation.pptx` and `.pdf` (13 to 15 slides) with charts from the actual run.
-- [x] `docs/DATA.md`, `docs/MODEL_CARD.md`, `docs/VIDEO_SCRIPT.md` (20 minutes, timed).
+- [x] `docs/DATA.md`, `docs/MODEL_CARD.md`.
 
 ### 9. Screenshots
 - [x] Playwright captures every screen, light mode plus one dark mode, into `docs/screenshots/`.
