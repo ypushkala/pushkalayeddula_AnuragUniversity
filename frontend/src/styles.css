@@ -977,3 +977,16 @@ input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color:
 .ask-result { display: block; }
 .ask-result > * { margin-top: 4px; }
 .ask-result .chip.static { display: inline-block; margin: 2px 4px 2px 0; }
+.ww-table { width: 100%; }
+.ww-table th { text-align: left; font-size: 12.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+.ww-table td:first-child { width: auto; white-space: nowrap; padding-right: 14px; }
+.ww-table tr.own td { font-weight: 600; }
+.check.inline-left { padding: 0 0 8px; display: inline-flex; gap: 6px; align-items: center; font-size: 15px; }
+.coming-up { font-size: 15.5px; color: var(--ink-2); border-left: 3px solid var(--rule-strong); padding: 6px 12px; margin: 4px 0 12px; }
+.fit-weeks td:nth-child(2) { width: 40%; }
+.fit-bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--accent); opacity: 0.6; vertical-align: middle; }
+.listen-slow { display: inline-flex; gap: 4px; align-items: center; }
+.listen-missing { flex-basis: 100%; }
+.phone-listen { padding: 8px 6px 0; }
+.thread { align-content: start; }
+.fit-weeks td:first-child { white-space: nowrap; }

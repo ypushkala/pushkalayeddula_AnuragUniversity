@@ -18,8 +18,8 @@ from prativimb import config
 from prativimb.api import note_pdf
 from prativimb.api.clock import DemoClock
 from prativimb.api import ask as ask_mod
-from prativimb.api.schemas import (Acknowledge, Action, Activity, Ask, ClockUpdate, Consent, MealEntry, Message,
-                                   PatientDetail, Plan, WhatIfRequest)
+from prativimb.api.schemas import (Acknowledge, Action, Activity, Ask, ClockUpdate, Consent, FestivalNudge, MealEntry, Message,
+                                   PatientDetail, Plan, WardNudge, WhatIfRequest)
 from prativimb.data.cohort import MEAL_TYPES
 from prativimb.api.services import AppState, clean, iso
 
@@ -70,6 +70,7 @@ async def broadcast(msg: dict) -> None:
 async def lifespan(app: FastAPI):
     global STATE
     STATE = AppState()
+    STATE.health_all(CLOCK.minute())  # the twin fit scan takes a minute or two; start it now, in the background
     task = asyncio.create_task(replay_loop())
     yield
     task.cancel()
@@ -299,16 +300,77 @@ def ask(q: Ask):
 
 
 @app.get("/api/ward/whatif")
-def ward_whatif(lever: str = Query("Walk 15 min after the meal", max_length=80)):
-    st = state()
-    if lever not in dict(st.LEVERS):
-        raise HTTPException(422, "Unknown change")
-    return st.ward_whatif(CLOCK.minute(), lever)
+def ward_whatif(include_watch: bool = False):
+    return state().ward_whatif(CLOCK.minute(), include_watch)
+
+
+SHARE_KEY = {"Walk 15 min after the meal": "walk15", "Walk 30 min after the meal": "walk30", "Millets instead of white rice": "millet",
+             "Brown rice instead of white rice": "brown_rice", "Roti instead of rice": "roti", "Half the portion": "half_portion",
+             "Walk 15 min and millets": "combo"}
+
+
+def _nudged_recently(st, pid: str, now: int, key: str, hours: int = 6) -> bool:
+    return any(m["key"] == key and now - m["minute"] < hours * 60 for m in st.store.messages_for(pid, now))
+
+
+@app.post("/api/ward/nudge")
+def ward_nudge(n: WardNudge, who=Depends(actor)):
+    """Message each of tonight's likely high patients the change that helps them (or one change for all)."""
+    need(who, ("doctor", "nurse"), "send messages to patients")
+    st, now = state(), int(CLOCK.minute())
+    res = st.ward_whatif(now, n.include_watch)
+    sent, skipped = [], []
+    for p in res["patients"]:
+        label = p["best"] if n.lever == "own_best" else n.lever
+        if label not in p["by_lever"] or label not in SHARE_KEY:
+            continue
+        if _nudged_recently(st, p["pid"], now, "nudge"):
+            skipped.append(p["name"])
+            continue
+        m = st.store.add_message(p["pid"], "care team", "nudge", "", now, who[1],
+                                 {"peak": round(p["peak"]), "after": round(p["by_lever"][label]["peak_after"]), "lever": SHARE_KEY[label]})
+        sent.append({"pid": p["pid"], "name": p["name"], "change": label, "id": m["id"]})
+    return {"sent": sent, "skipped": skipped}
 
 
 @app.get("/api/festivals")
 def festivals():
-    return state().festivals(CLOCK.minute())
+    f = state().festivals(CLOCK.minute())
+    return {"festivals": f["festivals"]}
+
+
+@app.get("/api/patients/{pid}/festivals")
+def patient_festivals(pid: str):
+    return state().festivals(CLOCK.minute())["by_patient"].get(check(pid), [])
+
+
+@app.post("/api/festivals/nudge")
+def festival_nudge(n: FestivalNudge, who=Depends(actor)):
+    """Message patients before a festival with the suggestion that helps them most on that day."""
+    need(who, ("doctor", "nurse"), "send messages to patients")
+    st, now = state(), int(CLOCK.minute())
+    f = st.festivals(now)
+    fest = next((x for x in f["festivals"] if x["key"] == n.festival), None)
+    if fest is None:
+        raise HTTPException(404, "That festival is not coming up")
+    rows = [r for rs in f["by_patient"].values() for r in rs if r["festival"] == n.festival]
+    rows = [r for r in rows if (r["pid"] in n.pids if n.pids else r["extra_hours_above"] >= 0.25)]
+    sent, skipped = [], []
+    for r in rows:
+        if _nudged_recently(st, r["pid"], now, "festival", 48):
+            skipped.append(r["name"])
+            continue
+        m = st.store.add_message(r["pid"], "care team", "festival", "", now, who[1], {
+            "festival": n.festival, "local_name": r.get("festival_local", ""), "dish": r.get("dish", ""), "date": fest["date"],
+            "extra_min": int(round(r["extra_hours_above"] * 60 / 5) * 5), "tip": r["best"],
+            "saved_min": int(round(r["best_saved_hours"] * 60 / 5) * 5)})
+        sent.append({"pid": r["pid"], "name": r["name"], "id": m["id"]})
+    return {"sent": sent, "skipped": skipped}
+
+
+@app.get("/api/patients/{pid}/refit-backtest")
+def refit_backtest(pid: str):
+    return state().refit_backtest(check(pid), CLOCK.minute())
 
 
 @app.post("/api/patients/{pid}/activities")

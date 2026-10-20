@@ -158,6 +158,8 @@ Before day 7 the forecast uses parameters estimated from the health record (medi
 * Only 6 cardiovascular events among test patients; intervals are wide and the supervised model has learned our simulated prodrome (see the stress test).
 * What if answers agree with the reference simulator in direction 76% of the time; an earlier meal is the weak spot (31%).
 * The forecast sharpening estimate assumes the meal's spread and the rest of the uncertainty are independent; it is an estimate, labelled as one.
+* Festival days are simulated with typical menus for the state and observance, days past the recorded data where the absolute level drifts; only differences between days for the same patient are reported.
+* A refit is tested on the three days after the week it is fitted on before it is recommended; for most synthetic patients it does not help, because they barely drift.
 * Twin health uses a threshold set on this synthetic cohort (errors 30% worse than the first week of use, or a 10 mg/dL bias); real patients will drift more and the threshold needs local tuning.
 * On real traces, models trained only on synthetic data perform at about persistence level; local retraining and per site conformal recalibration are prerequisites for deployment. Twin forecasts start from the observer estimate rather than the last reading, which costs accuracy at 30 minutes.
 * Low glucose forecasting has a short median lead and modest sensitivity; most lows here are brief level 1 dips in people without diabetes.

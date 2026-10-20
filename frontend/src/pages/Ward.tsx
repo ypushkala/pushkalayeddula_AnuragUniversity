@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api, dayToDate, dayMonth, fmt, glu, gluAbs, gluUnit, hhmm, minuteToDate, T, type WardRow, type WardWhatIf } from "../api";
 import { Hint } from "../components/Hint";
 import { GROUP_NAMES, needsAttention, patientLink } from "../components/PatientList";
@@ -100,31 +100,57 @@ function SinceLastLooked({ rows, now }: { rows: WardRow[]; now: string }) {
   );
 }
 
-/** If tonight's likely high patients all made one change: the ward's total, from each patient's own twin. */
+/** If tonight's likely high patients made a change: every change added up across them, and each patient's own best change. */
 function WardWhatIfPanel({ count }: { count: number }) {
-  const [lever, setLever] = useState("Walk 15 min after the meal");
+  const { can, refresh, toast } = useLive();
+  const [watch, setWatch] = useState(false);
   const [res, setRes] = useState<WardWhatIf | null>(null);
   const [busy, setBusy] = useState(false);
-  const run = (l: string) => { setLever(l); setBusy(true); api.wardWhatIf(l).then(setRes).finally(() => setBusy(false)); };
-  const levers = res?.levers ?? ["Walk 15 min after the meal", "Walk 30 min after the meal", "Millets instead of white rice", "Half the portion",
-    "Walk 15 min and millets"];
+  const [sending, setSending] = useState(false);
+  const load = (w: boolean) => { setWatch(w); setBusy(true); api.wardWhatIf(w).then(setRes).finally(() => setBusy(false)); };
+  const send = () => {
+    setSending(true);
+    api.wardNudge("own_best", watch).then(r => {
+      refresh();
+      toast({ text: `Sent ${r.sent.length} ${r.sent.length === 1 ? "message" : "messages"}${r.skipped.length ? `; ${r.skipped.length} already had one tonight` : ""}.`,
+        undo: () => Promise.all(r.sent.map(x => api.removeMessage(x.pid, x.id))) });
+    }).catch(e => toast({ text: e.message, error: true })).finally(() => setSending(false));
+  };
+  const top = res?.levers[0];
   return (
-    <details className="disclosure ward-whatif">
-      <summary><span className="d-title">If tonight's {count} likely high patients made one change</span>
-        <span className="d-hint">{res ? `${fmt(res.hours_saved, 1)} fewer hours above 180 in all` : "each patient's own forecast, added up"}</span></summary>
+    <details className="disclosure ward-whatif" onToggle={e => { if ((e.target as HTMLDetailsElement).open && !res) load(false); }}>
+      <summary><span className="d-title">If tonight's {count} likely high patients made a change</span>
+        <span className="d-hint">{res ? `up to ${fmt(res.own_best.hours_saved, 1)} fewer hours above 180 in all` : "each patient's own forecast, added up"}</span></summary>
       <div className="d-body">
-        <div className="ask-examples">{levers.filter(l => !l.includes("earlier") && !l.includes("Sleep")).map(l => (
-          <button key={l} className={`chip ${l === lever && res ? "on" : ""}`} aria-pressed={l === lever && Boolean(res)} onClick={() => run(l)}>{l}</button>
-        ))}</div>
-        {busy && <p className="empty">Running each patient's forecast.</p>}
+        <label className="check inline-left"><input type="checkbox" checked={watch} onChange={e => load(e.target.checked)} />
+          Include the patients whose glucose may go high</label>
+        {busy && <p className="empty">Running every change through each patient's forecast.</p>}
         {res && !busy && (
           <>
-            <p className="lead">{lever}: about <b>{fmt(res.hours_saved, 1)} fewer hours above 180</b> across {res.patients.length} patients tonight,
-              peaks about {gluAbs(res.mean_peak_drop)} {gluUnit()} lower on average.</p>
-            <table className="log num"><tbody>{res.patients.map(p => (
-              <tr key={p.pid}><td>{p.name}</td><td>peak {glu(p.peak_before)} to {glu(p.peak_after)}</td>
-                <td>{fmt(p.hours_above_before * 60)} to {fmt(p.hours_above_after * 60)} min above 180</td></tr>
-            ))}</tbody></table>
+            <p className="lead">If each patient made the change that helps them most: about <b>{fmt(res.own_best.hours_saved, 1)} fewer hours above 180</b>
+              {" "}across {res.patients.length} patients tonight{top ? `, against ${fmt(top.hours_saved, 1)} if everyone did the best single change (${top.label.toLowerCase()})` : ""}.</p>
+            <div className="two">
+              <table className="log num ww-table">
+                <thead><tr><th scope="col">Same change for everyone</th><th scope="col">Hours above 180 saved</th><th scope="col">Peaks lower by</th></tr></thead>
+                <tbody>
+                  <tr className="own"><td>Each patient's own best change</td><td>{fmt(res.own_best.hours_saved, 1)}</td><td>{gluAbs(res.own_best.mean_peak_drop)} {gluUnit()}</td></tr>
+                  {res.levers.map(l => <tr key={l.label}><td>{l.label}</td><td>{fmt(l.hours_saved, 1)}</td><td>{gluAbs(l.mean_peak_drop)} {gluUnit()}</td></tr>)}
+                </tbody>
+              </table>
+              <table className="log num ww-table">
+                <thead><tr><th scope="col">Patient</th><th scope="col">What helps them most</th><th scope="col">Saves</th></tr></thead>
+                <tbody>{res.patients.map(p => (
+                  <tr key={p.pid}><td><Link to={`/patient/${p.pid}/try`}>{p.name}</Link></td><td>{p.best}</td>
+                    <td>{fmt(p.best_hours_saved * 60)} min, peak {glu(p.peak)} to {glu(p.by_lever[p.best].peak_after)}</td></tr>
+                ))}</tbody>
+              </table>
+            </div>
+            {can("act") && (
+              <div className="agree">
+                <button className="btn primary" disabled={sending} onClick={send}>Message each patient their best change</button>
+                <span className="small muted">Goes to each patient's phone in their language, with the numbers above. Patients messaged in the last 6 hours are skipped.</span>
+              </div>
+            )}
           </>
         )}
       </div>

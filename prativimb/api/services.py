@@ -272,8 +272,8 @@ class AppState:
                 jobs.append((pid, k, minute))
         return {r.pid: r for r in self._rows(jobs)}
 
-    def _rows(self, jobs: list[tuple[str, int, float]]) -> list[Row]:
-        """Forecast rows for (patient, origin step, clock minute) jobs, batched per patient."""
+    def _rows(self, jobs: list[tuple[str, int, float]], theta: np.ndarray | None = None) -> list[Row]:
+        """Forecast rows for (patient, origin step, clock minute) jobs, batched per patient (theta: one patient's override)."""
         if not jobs:
             return []
         groups: dict[tuple, list[int]] = {}
@@ -283,7 +283,7 @@ class AppState:
         frames, order = [], []
         for (pid, _), idx in groups.items():
             minute = jobs[idx[0]][2]
-            pp, th = self.pp(pid, minute), self.theta(pid, jobs[idx[0]][1] * STEP)
+            pp, th = self.pp(pid, minute), (theta if theta is not None else self.theta(pid, jobs[idx[0]][1] * STEP))
             ks = np.array([jobs[i][1] for i in idx])
             G = forecast.forecast(pp, th, ks, 24)
             f = glucose_features(pp, ks, G, th)
@@ -1303,25 +1303,43 @@ class AppState:
                       "out_of_blood": "mg/dL per min"}})
 
     # ward level what if ----------------------------------------------------------------
-    def ward_whatif(self, minute: float, lever: str) -> dict:
-        req = dict(self.LEVERS)[lever]
-        rows = [r for r in self.ward(minute) if r["group"] == "high"]
-        out = []
+    def ward_whatif(self, minute: float, include_watch: bool = False) -> dict:
+        """Every change for every likely high patient tonight, added up, plus each patient's own best change."""
+        key = (int(minute // STEP), self.store.version, include_watch)
+        if getattr(self, "_wwi_key", None) == key:
+            return self._wwi
+        groups = ("high", "watch") if include_watch else ("high",)
+        rows = [r for r in self.ward(minute) if r["group"] in groups]
+        levers = [(l, q) for l, q in self.LEVERS if "earlier" not in l and "Sleep" not in l]
+        pts = []
         for r in rows:
             pid = r["id"]
             k = self.origin(pid, minute)
             if k is None:
                 continue
             pp, th = self.pp(pid, minute), self.theta(pid, minute)
-            gb, _ = forecast.simulate_scenario(pp, th, k, 72, forecast.Scenario(), method="rk4")
-            ga, _ = forecast.simulate_scenario(pp, th, k, 72, forecast.Scenario(**req), method="rk4")
-            gb, ga = np.asarray(gb)[1:], np.asarray(ga)[1:]
-            out.append({"pid": pid, "name": r["name"], "peak_before": float(gb.max()), "peak_after": float(ga.max()),
-                        "hours_above_before": float((gb > 180).sum() * STEP / 60), "hours_above_after": float((ga > 180).sum() * STEP / 60)})
-        saved = sum(x["hours_above_before"] - x["hours_above_after"] for x in out)
-        return clean({"lever": lever, "patients": out, "hours_saved": saved,
-                      "mean_peak_drop": float(np.mean([x["peak_before"] - x["peak_after"] for x in out])) if out else 0.0,
-                      "levers": [l for l, _ in self.LEVERS]})
+            gb = np.asarray(forecast.simulate_scenario(pp, th, k, 72, forecast.Scenario(), method="rk4")[0])[1:]
+            by = {}
+            for label, req in levers:
+                ga = np.asarray(forecast.simulate_scenario(pp, th, k, 72, forecast.Scenario(**req), method="rk4")[0])[1:]
+                by[label] = {"peak_after": float(ga.max()), "hours_after": float((ga > 180).sum() * STEP / 60)}
+            hb = float((gb > 180).sum() * STEP / 60)
+            best = max(by, key=lambda l: (hb - by[l]["hours_after"], gb.max() - by[l]["peak_after"]))
+            pts.append({"pid": pid, "name": r["name"], "group": r["group"], "peak": float(gb.max()), "hours_above": hb,
+                        "by_lever": by, "best": best, "best_hours_saved": hb - by[best]["hours_after"],
+                        "best_peak_drop": float(gb.max() - by[best]["peak_after"])})
+        summary = []
+        for label, _ in levers:
+            saved = sum(x["hours_above"] - x["by_lever"][label]["hours_after"] for x in pts)
+            drop = float(np.mean([x["peak"] - x["by_lever"][label]["peak_after"] for x in pts])) if pts else 0.0
+            summary.append({"label": label, "hours_saved": saved, "mean_peak_drop": drop})
+        summary.sort(key=lambda x: -x["hours_saved"])
+        own = {"hours_saved": sum(x["best_hours_saved"] for x in pts),
+               "mean_peak_drop": float(np.mean([x["best_peak_drop"] for x in pts])) if pts else 0.0}
+        res = clean({"patients": pts, "levers": summary, "own_best": own, "include_watch": include_watch,
+                     "hours_above_total": sum(x["hours_above"] for x in pts)})
+        self._wwi_key, self._wwi = key, res
+        return res
 
     # twin health -----------------------------------------------------------------------
     def twin_health(self, pid: str, minute: float) -> dict:
@@ -1354,9 +1372,20 @@ class AppState:
                    "text": (f"Typical 2 hour error {r1:.0f} mg/dL over the last 7 days against {r0:.0f} in its first week of use"
                             + (f"; it now reads {abs(bias):.0f} mg/dL {'high' if bias > 0 else 'low'} on average" if abs(bias) > 8 else "")
                             + (". The twin no longer fits as well as it did: refit it on the last week." if drifting else ". Fitting as well as before."))}
+        weeks = []
+        for a in range(config.CALIBRATION_DAYS, int(now // 1440), 7):
+            b = min(a + 7, now / 1440)
+            if b - a < 2:
+                break
+            e = errors(a * 1440, b * 1440)
+            if len(e) >= 20:
+                weeks.append({"from": (config.START.date() + timedelta(days=a)).isoformat(),
+                              "to": (config.START.date() + timedelta(days=int(np.ceil(b)) - 1)).isoformat(),
+                              "rmse": float(np.sqrt(np.mean(e ** 2))), "bias": float(np.mean(e))})
+        res["weeks"] = weeks
         r = self.store.refit(pid, minute)
         res["refit"] = {"t": iso(r["minute"]), "by": r["by"], "rmse_before": r.get("rmse_before"), "rmse_after": r.get("rmse_after"),
-                        "id": r["id"]} if r else None
+                        "id": r["id"], "backtest": r.get("backtest")} if r else None
         cache[key] = clean(res)
         return cache[key]
 
@@ -1379,76 +1408,123 @@ class AppState:
             threading.Thread(target=work, daemon=True).start()
         return {}
 
-    def refit_twin(self, pid: str, minute: float, by: str) -> dict:
+    def _refit(self, pid: str, minute: float, start_day: int, end_day: int):
         from prativimb.twin import calibrate as cal
-        d = int(minute // 1440)
-        start = max(0, d - 7)
         s = self.S[pid]
-        current = self.theta(pid, minute)
+        current = self.theta(pid, start_day * 1440)
         prior = cal.Prior(current, cal.ehr_prior(s.ehr).sd * 0.7)
-        theta, rep_ = cal.calibrate(s, prior=prior, days=d - start, start_day=start)
+        return current, *cal.calibrate(s, prior=prior, days=end_day - start_day, start_day=start_day)
+
+    def refit_backtest(self, pid: str, minute: float) -> dict:
+        """Would a refit help? Refit on the week that ended three days ago, then compare old and new on those three days.
+
+        The fit error on the week it was fitted on always improves; this asks whether the next days get better."""
+        key = (pid, int(minute // 60), self.store.version)
+        cache = self.__dict__.setdefault("_backtest_cache", {})
+        if key in cache:
+            return cache[key]
+        d = int(minute // 1440)
+        if d - 10 < config.CALIBRATION_DAYS:
+            return {"available": False, "reason": "Needs at least ten days of use."}
+        old, new, _ = self._refit(pid, minute, d - 10, d - 3)
+        c = self.S[pid].cgm
+        jobs = []
+        for m in np.arange((d - 3) * 1440, minute - 120, 60):
+            k = self.origin(pid, float(m))
+            if k is not None and k >= forecast.W and k + 24 < len(c) and not np.isnan(c[k + 24]):
+                jobs.append((pid, k, float(m)))
+        e_old = np.array([r.hyb[120] - c[r.k + 24] for r in self._rows(jobs, old)])
+        e_new = np.array([r.hyb[120] - c[r.k + 24] for r in self._rows(jobs, new)])
+        r_old, r_new = float(np.sqrt(np.mean(e_old ** 2))), float(np.sqrt(np.mean(e_new ** 2)))
+        day = lambda x: (config.START.date() + timedelta(days=x)).strftime("%d %b")
+        helps = r_new < r_old - 1.0
+        res = clean({"available": True, "fit_on": [day(d - 10), day(d - 4)], "tested_on": [day(d - 3), day(d)], "n": len(jobs),
+                     "rmse_old": r_old, "rmse_new": r_new, "helps": helps,
+                     "text": (f"A refit on {day(d - 10)} to {day(d - 4)}, tested on the {len(jobs)} forecasts since, changes the typical 2 hour "
+                              f"error from {r_old:.0f} to {r_new:.0f} mg/dL. "
+                              + ("A refit is likely to help." if helps else "A refit would not clearly help; the current fit is as good."))})
+        cache[key] = res
+        return res
+
+    def refit_twin(self, pid: str, minute: float, by: str) -> dict:
+        d = int(minute // 1440)
+        bt = self.refit_backtest(pid, minute)
+        _, theta, rep_ = self._refit(pid, minute, max(0, d - 7), d)
         return self.store.add_refit(pid, list(theta), by, int(minute), {"rmse_before": rep_["rmse_prior"],
-                                    "rmse_after": rep_["rmse_fit"], "days": [start, d]})
+                                    "rmse_after": rep_["rmse_fit"], "days": [max(0, d - 7), d],
+                                    "backtest": {k: bt.get(k) for k in ("rmse_old", "rmse_new", "helps", "text")} if bt.get("available") else None})
 
     # festival planner --------------------------------------------------------------------
+    # The regional new year differs by state; the dish is what the patient is likely to be offered.
+    NEW_YEAR = {"Maharashtra": ("Gudi Padwa", "puran poli"), "Karnataka": ("Ugadi", "obbattu (holige)"),
+                "Telangana": ("Ugadi", "bobbatlu and ugadi pachadi"), "Andhra Pradesh": ("Ugadi", "bobbatlu and ugadi pachadi")}
     FESTIVALS = [
-        {"key": "ugadi", "name": "Ugadi and Gudi Padwa", "date": "2026-03-19", "who": "regional",
-         "about": "New year in the Deccan and Maharashtra: a festive lunch with holige or puran poli.",
-         "suggest": "A smaller helping of the sweet and a walk after the festive lunch."},
+        {"key": "new_year", "name": "Ugadi and Gudi Padwa", "date": "2026-03-19", "who": "regional",
+         "about": "New year in Maharashtra, Karnataka, Telangana and Andhra Pradesh: a festive lunch with a sweet stuffed flatbread."},
         {"key": "navratri", "name": "Chaitra Navratri, first fast", "date": "2026-03-19", "who": "hindu_fasts",
-         "about": "Nine days from 19 March; many keep fasts with sabudana, potato and fruit.",
-         "suggest": "Fewer sabudana dishes, more curd and fruit with the fast meal, and no long gap before breaking the fast."},
+         "about": "Nine days from 19 March; many keep fasts with sabudana, potato and fruit. The first fast day is shown."},
         {"key": "eid", "name": "Eid al-Fitr (expected, depends on the moon)", "date": "2026-03-21", "who": "ramadan",
-         "about": "The end of Ramadan: sheer khurma in the morning, biryani and sweets through the day.",
-         "suggest": "A small bowl of sheer khurma, biryani with raita at one meal only, a walk after lunch."},
+         "about": "The end of Ramadan: sheer khurma in the morning, biryani and sweets through the day."},
     ]
-    REGIONAL = {"Mumbai", "Pune", "Nagpur", "Nashik", "Bengaluru", "Mysuru", "Hyderabad", "Vijayawada", "Hubballi", "Visakhapatnam"}
+    TIPS = {"half_sweets": "Half the usual helping of the sweet", "walk": "A 15 minute walk after the festive meal",
+            "smaller_fast": "A smaller fast meal, two thirds of the usual"}
 
-    def _festival_meals(self, pid: str, fest: dict, day_minute: int) -> list[tuple]:
+    def _festival_for(self, pid: str, fest: dict) -> dict | None:
+        """Whether this patient keeps this festival, and what it is called and served where they live."""
+        from prativimb.data.cohort import STATE_OF
+        dec, city = self.S[pid].declared, self.patients.loc[pid].city
+        if fest["who"] == "ramadan":
+            return {"name": "Eid al-Fitr", "dish": "sheer khurma"} if dec.get("observes_ramadan") else None
+        if fest["who"] == "hindu_fasts":
+            return {"name": "Navratri", "dish": "sabudana"} if dec.get("observes_hindu_fasts") else None
+        ny = self.NEW_YEAR.get(STATE_OF.get(city, ""))
+        return {"name": ny[0], "dish": ny[1]} if ny and not dec.get("observes_ramadan") else None
+
+    def _festival_meals(self, pid: str, fest: dict, day_minute: int, sweet_factor: float = 1.0) -> tuple[list[tuple], int]:
+        """Planned meals for the day and the minute of its main festive meal."""
         AF = {k: v[1] for k, v in MEAL_TYPES.items()}
         if fest["key"] == "eid":
-            day = [(8 * 60 + 30, 45, "sweets", "Sheer khurma"), (13 * 60 + 30, 110, "biryani", "Eid lunch"),
-                   (17 * 60, 40, "sweets", "Sweets with guests"), (21 * 60, 90, "biryani", "Eid dinner")]
+            day = [(8 * 60 + 30, 45 * sweet_factor, "sweets", "Sheer khurma"), (13 * 60 + 30, 110, "biryani", "Eid lunch"),
+                   (17 * 60, 40 * sweet_factor, "sweets", "Sweets with guests"), (21 * 60, 90, "biryani", "Eid dinner")]
+            main = 13 * 60 + 30
         elif fest["key"] == "navratri":
-            plan = self.S[pid].routine.get("hindu_fast") or []
-            day = [(m, g, kind, name) for m, g, kind, name in plan] or [(11 * 60, 70, "sabudana", "Fast meal"),
-                                                                        (19 * 60 + 30, 80, "sabudana", "Fast dinner")]
+            plan = self.S[pid].routine.get("hindu_fast") or [(11 * 60, 70, "sabudana", "Fast meal"), (19 * 60 + 30, 80, "sabudana", "Fast dinner")]
+            day = [(m, g * sweet_factor, kind, name) for m, g, kind, name in plan]
+            main = max(day, key=lambda x: x[1])[0]
         else:
-            day = [(13 * 60 + 30, 150, "sweets", "Festive lunch with holige or puran poli"), (17 * 60, 30, "sweets", "Sweets")]
-        return [(day_minute + m, float(g), AF.get(kind, 1.0), name) for m, g, kind, name in day]
+            day = [(13 * 60 + 30, 90 + 60 * sweet_factor, "sweets", "Festive lunch"), (17 * 60, 30 * sweet_factor, "sweets", "Sweets")]
+            main = 13 * 60 + 30
+        return [(day_minute + m, float(g), AF.get(kind, 1.0), name) for m, g, kind, name in day], day_minute + main
 
     def festivals(self, minute: float) -> dict:
         key = (int(minute // 1440), self.store.version)
         if getattr(self, "_fest_key", None) == key:
             return self._fest
         from datetime import date
-        out = []
+        out, per_patient = [], {}
         for fest in self.FESTIVALS:
             d = (date.fromisoformat(fest["date"]) - config.START.date()).days
             day0 = d * 1440
             if day0 + 1440 <= minute:
                 continue
-            pids = []
-            for pid in self.patients.index:
-                dec = self.S[pid].declared
-                if fest["who"] == "ramadan" and dec.get("observes_ramadan"):
-                    pids.append(pid)
-                elif fest["who"] == "hindu_fasts" and dec.get("observes_hindu_fasts"):
-                    pids.append(pid)
-                elif fest["who"] == "regional" and self.patients.loc[pid].city in self.REGIONAL and not dec.get("observes_ramadan"):
-                    pids.append(pid)
-            rows = self._festival_batch(pids, fest, minute, day0)
+            who = {pid: f for pid in self.patients.index if (f := self._festival_for(pid, fest))}
+            rows = self._festival_batch(list(who), fest, minute, day0)
+            for r in rows:
+                r["festival_local"], r["dish"] = who[r["pid"]]["name"], who[r["pid"]]["dish"]
+                per_patient.setdefault(r["pid"], []).append({**r, "festival": fest["key"], "date": fest["date"]})
             rows.sort(key=lambda r: -r["extra_hours_above"])
-            out.append({**fest, "day": d, "patients": len(pids),
-                        "most_affected": [r for r in rows if r["extra_hours_above"] >= 0.25][:10],
-                        "total_extra_hours": float(sum(max(r["extra_hours_above"], 0) for r in rows))})
-        self._fest_key, self._fest = key, clean({"festivals": out})
+            tip = "smaller_fast" if fest["key"] == "navratri" else "half_sweets"
+            out.append({**fest, "day": d, "patients": len(who), "tip_keys": [tip, "walk"],
+                        "tips": {tip: self.TIPS[tip], "walk": self.TIPS["walk"]},
+                        "most_affected": [r for r in rows if r["extra_hours_above"] >= 0.25][:12],
+                        "total_extra_hours": float(sum(max(r["extra_hours_above"], 0) for r in rows)),
+                        "total_saved_hours": float(sum(max(r["best_saved_hours"], 0) for r in rows if r["extra_hours_above"] > 0))})
+        self._fest_key, self._fest = key, clean({"festivals": out, "by_patient": per_patient})
         return self._fest
 
     def _festival_batch(self, pids: list[str], fest: dict, minute: float, day0: int) -> list[dict]:
-        """Twin runs from now to the end of the festival day: usual plan against the festival plan, batched."""
-        rows, U, O, X0, TH, BW, MET, meta = [], [], [], [], [], [], [], []
-        H = None
+        """Twin runs from now to the end of the festival day, batched: usual, festival, festival with each suggestion."""
+        meta, H = [], None
         for pid in pids:
             k = self.origin(pid, minute)
             if k is None or k < forecast.W:
@@ -1458,25 +1534,35 @@ class AppState:
             meta.append((pid, k))
         if not meta:
             return []
+        tip = "smaller_fast" if fest["key"] == "navratri" else "half_sweets"
+        variants = ("usual", "festival", tip, "walk")
+        U, O, X0, TH, BW, MET = [], [], [], [], [], []
         for pid, k in meta:
-            base_pp = self.pp(pid, minute)
-            fest_pp = forecast.Prepared(**{**base_pp.__dict__, "extra": {**base_pp.extra,
-                                           "planned": base_pp.extra.get("planned", []) + self._festival_meals(pid, fest, day0)}})
-            for pp in (base_pp, fest_pp):
+            base = self.pp(pid, minute)
+            for v in variants:
+                if v == "usual":
+                    pp = base
+                else:
+                    meals, main = self._festival_meals(pid, fest, day0, 0.5 if v == "half_sweets" else 0.67 if v == "smaller_fast" else 1.0)
+                    walks = base.extra.get("walks", []) + ([(main + 10, 15)] if v == "walk" else [])
+                    pp = forecast.Prepared(**{**base.__dict__, "extra": {**base.extra, "planned": base.extra.get("planned", []) + meals,
+                                                                         "walks": walks}})
                 u, obs, x0, _ = forecast.apply_scenario(pp, k, H, forecast.Scenario())
                 U.append(u); O.append(obs); X0.append(x0)
                 TH.append(self.theta(pid, minute)); BW.append(float(pp.s.bw)); MET.append(float(pp.s.on_metformin))
         cat = lambda f: np.concatenate([getattr(u, f) for u in U])
         u = bergman.Inputs(*(cat(f) for f in ("carbs", "af", "A", "dose", "smod", "dawn")))
-        obs = np.concatenate(O)
-        x0 = np.concatenate(X0, axis=1)
         p = bergman.params_dict(np.array(TH), np.array(BW), np.array(MET))
-        G, _ = bergman.run_rk4(p, x0, u, obs=obs, obs_until=forecast.W)
+        G, _ = bergman.run_rk4(p, np.concatenate(X0, axis=1), u, obs=np.concatenate(O), obs_until=forecast.W)
         G = G[:, forecast.W:]
         names = {pid: f"{q.given} {q.family}" for pid, q in self.patients.iterrows()}
+        rows, n = [], len(variants)
         for i, (pid, k) in enumerate(meta):
-            j0 = int((day0 - k * STEP) // STEP)
-            gb, gf = G[2 * i, max(j0, 0): H], G[2 * i + 1, max(j0, 0): H]
-            rows.append({"pid": pid, "name": names[pid], "usual_peak": float(gb.max()), "festival_peak": float(gf.max()),
-                         "extra_hours_above": float(((gf > 180).sum() - (gb > 180).sum()) * STEP / 60)})
+            j0 = max(int((day0 - k * STEP) // STEP), 0)
+            g = [G[n * i + v, j0: H] for v in range(n)]
+            hrs = [float((x > 180).sum() * STEP / 60) for x in g]
+            saved = {variants[v]: hrs[1] - hrs[v] for v in (2, 3)}
+            best = max(saved, key=saved.get)
+            rows.append({"pid": pid, "name": names[pid], "usual_peak": float(g[0].max()), "festival_peak": float(g[1].max()),
+                         "extra_hours_above": hrs[1] - hrs[0], "saved_hours": saved, "best": best, "best_saved_hours": saved[best]})
         return rows

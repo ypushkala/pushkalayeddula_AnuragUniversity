@@ -50,8 +50,11 @@ SHOTS = [
     ("26_walk_today", "/patient/PTV-0001", "2026-03-15T22:30:00+05:30", "light", ".walk-note", "walkloop"),
     ("27_festivals", "/festivals", "2026-03-15T19:45:00+05:30", "light", ".fest", None),
     ("28_ward_whatif", "/", "2026-03-15T19:45:00+05:30", "light", "table.ward tbody tr",
-     "steps:sel=.ward-whatif summary|wait=500|click=Walk 15 min after the meal|wait=7000"),
+     "steps:sel=.ward-whatif summary|wait=6000"),
     ("29_sharpen", "/patient/PTV-0001", "2026-03-15T19:45:00+05:30", "light", ".sharpen", None),
+    ("30_twin_fit", "/patient/PTV-0016/record#learned", "2026-03-15T19:45:00+05:30", "light", ".fit",
+     "steps:click=Would a refit help?|wait=5000"),
+    ("31_festival_message", "/phone/PTV-0002", "2026-03-15T19:45:00+05:30", "light", ".phone", "festmsg"),
 ]
 PATIENT = {"X-Prativimb-Role": "patient", "X-Prativimb-User": "Ramesh"}
 
@@ -93,6 +96,10 @@ def main(only: list[str] | None = None) -> None:
                 b = call("POST", "/api/patients/PTV-0159/actions", {"kind": "check", "outcome": "Fingerstick normal, probably the sensor", "alert": "low"})
                 c = call("POST", "/api/patients/PTV-0151/actions", {"kind": "call", "outcome": "Spoke to the patient, no symptoms", "alert": "cardio"})
                 undo = [f"/api/patients/PTV-0001/ack/{a['id']}", f"/api/patients/PTV-0159/actions/{b['id']}", f"/api/patients/PTV-0151/actions/{c['id']}"]
+            if click == "festmsg":
+                r = call("POST", "/api/festivals/nudge", {"festival": "eid", "pids": ["PTV-0002"]})
+                undo = [f"/api/patients/PTV-0002/messages/{x['id']}" for x in r["sent"]]
+                page.add_init_script("localStorage.setItem('prativimb-share-lang', 'hi');")
             if click == "walkloop":
                 # Ramesh replies on his phone at 19:45 that he will walk after dinner; then the replay moves on to 22:30.
                 set_clock("2026-03-15T19:45:00+05:30")
@@ -134,7 +141,7 @@ def main(only: list[str] | None = None) -> None:
                     elif kind == "wait":
                         page.wait_for_timeout(int(arg))
                 page.wait_for_load_state("networkidle")
-            elif click and click not in ("phone", "seed", "signedout", "walkloop"):
+            elif click and click not in ("phone", "seed", "signedout", "walkloop", "festmsg"):
                 page.get_by_text(click, exact=True).click()
                 page.wait_for_timeout(4000)
                 page.wait_for_load_state("networkidle")

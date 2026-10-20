@@ -74,17 +74,25 @@ export interface Sharpen { items: { kind: string; action: string; gain: number; 
   range?: { lo: number; hi: number; time: string } }
 export type InsideSeries = Record<"G" | "stomach_g" | "gut_g" | "into_blood" | "insulin" | "action" | "activity" | "out_of_blood", number[]>;
 export interface Inside { available: boolean; times: string[]; usual: InsideSeries; change: InsideSeries; meal_step: number | null }
+export interface Backtest { available: boolean; reason?: string; fit_on: [string, string]; tested_on: [string, string]; n: number;
+  rmse_old: number; rmse_new: number; helps: boolean; text: string }
 export interface TwinHealth { status: "good" | "drifting" | "too early"; text: string; rmse_then?: number; rmse_now?: number; bias_now?: number;
-  refit: { t: string; by: string; rmse_before: number; rmse_after: number; id: string } | null }
+  weeks?: { from: string; to: string; rmse: number; bias: number }[];
+  refit: { t: string; by: string; rmse_before: number; rmse_after: number; id: string; backtest: Partial<Backtest> | null } | null }
 export interface Parsed { request: Partial<WhatIfReq>; understood: string[]; parser: string; unclear?: string }
-export interface WardWhatIf { lever: string; levers: string[]; hours_saved: number; mean_peak_drop: number;
-  patients: { pid: string; name: string; peak_before: number; peak_after: number; hours_above_before: number; hours_above_after: number }[] }
-export interface Festival { key: string; name: string; date: string; about: string; suggest: string; patients: number; total_extra_hours: number;
-  most_affected: { pid: string; name: string; usual_peak: number; festival_peak: number; extra_hours_above: number }[] }
+export interface WardWhatIf { include_watch: boolean; hours_above_total: number;
+  levers: { label: string; hours_saved: number; mean_peak_drop: number }[]; own_best: { hours_saved: number; mean_peak_drop: number };
+  patients: { pid: string; name: string; group: string; peak: number; hours_above: number; best: string; best_hours_saved: number; best_peak_drop: number;
+    by_lever: Record<string, { peak_after: number; hours_after: number }> }[] }
+export interface FestivalRow { pid: string; name: string; usual_peak: number; festival_peak: number; extra_hours_above: number;
+  saved_hours: Record<string, number>; best: string; best_saved_hours: number; festival_local: string; dish: string; festival?: string; date?: string }
+export interface Festival { key: string; name: string; date: string; about: string; patients: number; total_extra_hours: number;
+  total_saved_hours: number; tips: Record<string, string>; tip_keys: string[]; most_affected: FestivalRow[] }
 export interface ActivityRec { id: string; pid: string; kind: "walk"; start: number; minutes: number; by: string; source: string;
   start_t: string; done: boolean }
 export interface MessageRec { id: string; pid: string; from: "patient" | "care team"; key: string; text: string; t: string; by: string;
-  params: { peak?: number; after?: number; lever?: string } }
+  params: { peak?: number; after?: number; lever?: string; festival?: string; local_name?: string; dish?: string; date?: string;
+    extra_min?: number; tip?: string; saved_min?: number } }
 export interface WalkResult { available: boolean; pending?: boolean; start?: string; minutes?: number; peak_with?: number; peak_without?: number;
   minutes_above_with?: number; minutes_above_without?: number }
 export interface Digest { date: string; patients: number; alerts: number; lows: number; alerts_happened: number; alerts_total: number;
@@ -199,8 +207,14 @@ export const api = {
   refit: (id: string) => j<{ id: string; rmse_before: number; rmse_after: number }>(`/api/patients/${id}/refit`, { method: "POST" }),
   undoRefit: (id: string, rid: string) => j<unknown>(`/api/patients/${id}/refit/${rid}`, { method: "DELETE" }),
   ask: (text: string) => j<Parsed>("/api/ask", post({ text })),
-  wardWhatIf: (lever: string) => j<WardWhatIf>(`/api/ward/whatif?lever=${encodeURIComponent(lever)}`),
+  wardWhatIf: (includeWatch = false) => j<WardWhatIf>(`/api/ward/whatif?include_watch=${includeWatch}`),
+  wardNudge: (lever: string, includeWatch = false) =>
+    j<{ sent: { pid: string; name: string; change: string; id: string }[]; skipped: string[] }>("/api/ward/nudge", post({ lever, include_watch: includeWatch })),
   festivals: () => j<{ festivals: Festival[] }>("/api/festivals"),
+  patientFestivals: (id: string) => j<FestivalRow[]>(`/api/patients/${id}/festivals`),
+  festivalNudge: (festival: string, pids: string[] = []) =>
+    j<{ sent: { pid: string; name: string; id: string }[]; skipped: string[] }>("/api/festivals/nudge", post({ festival, pids })),
+  refitBacktest: (id: string) => j<Backtest>(`/api/patients/${id}/refit-backtest`),
   activities: (id: string) => j<ActivityRec[]>(`/api/patients/${id}/activities`),
   addActivity: (id: string, body: { minutes: number; when: "after_next_meal" | "now" | "done"; minutes_ago?: number }, as?: Session) =>
     j<ActivityRec>(`/api/patients/${id}/activities`, post({ kind: "walk", ...body }), as),

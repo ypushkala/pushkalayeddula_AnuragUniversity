@@ -156,3 +156,13 @@ class Message(BaseModel):
 
 class Ask(BaseModel):
     text: str = Field(..., min_length=1, max_length=400)
+
+
+class WardNudge(BaseModel):
+    lever: str = Field("own_best", max_length=80)
+    include_watch: bool = False
+
+
+class FestivalNudge(BaseModel):
+    festival: Literal["new_year", "navratri", "eid"]
+    pids: list[str] = Field(default_factory=list, max_length=200)

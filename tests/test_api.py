@@ -193,9 +193,17 @@ def test_inside_twin_and_ward_whatif(client):
     d = client.post("/api/patients/PTV-0001/inside", json={"swap": "millet"}).json()
     assert d["available"] and len(d["times"]) == 72 and max(d["change"]["G"]) < max(d["usual"]["G"])
     assert max(d["usual"]["stomach_g"]) > 50
-    w = client.get("/api/ward/whatif?lever=Walk%2015%20min%20after%20the%20meal").json()
-    assert len(w["patients"]) >= 3 and w["hours_saved"] >= 0 and w["mean_peak_drop"] > 0
-    assert client.get("/api/ward/whatif?lever=nonsense").status_code == 422
+    w = client.get("/api/ward/whatif").json()
+    assert len(w["patients"]) >= 3 and w["levers"][0]["hours_saved"] >= w["levers"][-1]["hours_saved"]
+    # Each patient's own best change can never do worse than the best single change for everyone.
+    assert w["own_best"]["hours_saved"] >= w["levers"][0]["hours_saved"] - 1e-6
+    n = client.post("/api/ward/nudge", json={"lever": "own_best"}, headers=NURSE).json()
+    assert len(n["sent"]) == len([p for p in w["patients"] if p["best"]])
+    again = client.post("/api/ward/nudge", json={"lever": "own_best"}, headers=NURSE).json()
+    assert not again["sent"] and len(again["skipped"]) == len(n["sent"])
+    for x in n["sent"]:
+        client.delete(f"/api/patients/{x['pid']}/messages/{x['id']}", headers=NURSE)
+    assert client.post("/api/ward/nudge", json={"lever": "own_best"}, headers=PATIENT).status_code == 403
 
 
 def test_ask_in_plain_words(client):
@@ -236,4 +244,17 @@ def test_twin_health_refit_and_festivals(client):
     assert client.get("/api/patients/PTV-0001/twin-health").json()["refit"]["id"] == r["id"]
     client.delete(f"/api/patients/PTV-0001/refit/{r['id']}", headers=DOCTOR)
     f = client.get("/api/festivals").json()["festivals"]
-    assert {x["key"] for x in f} == {"ugadi", "navratri", "eid"} and all(x["patients"] > 0 for x in f)
+    assert {x["key"] for x in f} == {"new_year", "navratri", "eid"} and all(x["patients"] > 0 for x in f)
+    ny = next(x for x in f if x["key"] == "new_year")
+    assert {r["festival_local"] for r in ny["most_affected"]} <= {"Gudi Padwa", "Ugadi"}
+    assert all(r["best"] in ("half_sweets", "walk") for r in ny["most_affected"])
+    fatima = client.get("/api/patients/PTV-0002/festivals").json()
+    assert any(r["festival"] == "eid" and r["dish"] == "sheer khurma" for r in fatima)
+    sent = client.post("/api/festivals/nudge", json={"festival": "eid", "pids": ["PTV-0002"]}, headers=NURSE).json()["sent"]
+    msg = client.get("/api/patients/PTV-0002/messages").json()[-1]
+    assert msg["key"] == "festival" and msg["params"]["local_name"] == "Eid al-Fitr" and msg["params"]["extra_min"] >= 0
+    client.delete(f"/api/patients/PTV-0002/messages/{sent[0]['id']}", headers=NURSE)
+    b = client.get("/api/patients/PTV-0001/refit-backtest").json()
+    assert b["available"] and b["n"] > 30 and isinstance(b["helps"], bool)
+    h2 = client.get("/api/patients/PTV-0016/twin-health").json()
+    assert len(h2["weeks"]) >= 2 and all(w["rmse"] > 0 for w in h2["weeks"])

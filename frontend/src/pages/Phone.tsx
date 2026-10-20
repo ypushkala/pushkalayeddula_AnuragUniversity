@@ -41,11 +41,38 @@ const P: Record<Lang, Record<string, string>> = {
   },
 };
 
-function Bubble({ who, time, text, lang, listen, stop }: { who: "team" | "you"; time: string; text: string; lang: Lang; listen?: string; stop?: string }) {
+const FEST: Record<string, Record<Lang, string>> = {
+  "Gudi Padwa": { en: "Gudi Padwa", hi: "गुड़ी पड़वा", ta: "குடி பட்வா" }, Ugadi: { en: "Ugadi", hi: "उगादि", ta: "யுகாதி" },
+  Navratri: { en: "Navratri", hi: "नवरात्रि", ta: "நவராத்திரி" }, "Eid al-Fitr": { en: "Eid al-Fitr", hi: "ईद", ta: "ரம்ஜான்" },
+};
+const DISH: Record<string, Record<Lang, string>> = {
+  "puran poli": { en: "puran poli", hi: "पूरन पोली", ta: "பூரண் போளி" },
+  "obbattu (holige)": { en: "obbattu (holige)", hi: "ओब्बट्टु (होलिगे)", ta: "ஒப்பட்டு (ஹோளிகே)" },
+  "bobbatlu and ugadi pachadi": { en: "bobbatlu", hi: "बोब्बट्लु", ta: "போளி" },
+  sabudana: { en: "sabudana", hi: "साबूदाना", ta: "ஜவ்வரிசி" }, "sheer khurma": { en: "sheer khurma", hi: "शीर ख़ुरमा", ta: "ஷீர் குர்மா" },
+};
+const FEST_T: Record<Lang, { msg: string; half_sweets: string; walk: string; smaller_fast: string; general: string }> = {
+  en: { general: "Small helpings of the sweets and a short walk after the festive meal help.", msg: "{name}, {festival} is on {date}. On a day like that your sugar may stay high for about {extra} minutes longer than usual. {tip}",
+    half_sweets: "Taking half the usual helping of {dish} could take about {saved} minutes off that.",
+    walk: "A 15 minute walk after the festive meal could take about {saved} minutes off that.",
+    smaller_fast: "A smaller fast meal, with some curd or fruit, could take about {saved} minutes off that." },
+  hi: { general: "मिठाई थोड़ी कम लें और त्योहार के भोजन के बाद थोड़ा टहलें, इससे मदद मिलती है।", msg: "{name}, {date} को {festival} है। ऐसे दिन आपकी शुगर सामान्य से लगभग {extra} मिनट ज़्यादा देर ऊँची रह सकती है। {tip}",
+    half_sweets: "{dish} की आधी मात्रा लेने से इसमें लगभग {saved} मिनट कम हो सकते हैं।",
+    walk: "त्योहार के भोजन के बाद 15 मिनट टहलने से इसमें लगभग {saved} मिनट कम हो सकते हैं।",
+    smaller_fast: "व्रत का भोजन थोड़ा कम और साथ में दही या फल लेने से इसमें लगभग {saved} मिनट कम हो सकते हैं।" },
+  ta: { general: "இனிப்புகளை குறைவாக எடுத்து, பண்டிகை உணவுக்குப் பின் சிறிது நடப்பது உதவும்.", msg: "{name}, {date} அன்று {festival}. அப்படிப்பட்ட நாளில் உங்கள் சர்க்கரை வழக்கத்தை விட சுமார் {extra} நிமிடம் அதிக நேரம் உயர்ந்தே இருக்கலாம். {tip}",
+    half_sweets: "{dish} வழக்கமான அளவில் பாதி எடுத்தால் இதில் சுமார் {saved} நிமிடம் குறையலாம்.",
+    walk: "பண்டிகை உணவுக்குப் பின் 15 நிமிடம் நடந்தால் இதில் சுமார் {saved} நிமிடம் குறையலாம்.",
+    smaller_fast: "விரத உணவை சற்று குறைவாக, தயிர் அல்லது பழத்துடன் எடுத்தால் இதில் சுமார் {saved} நிமிடம் குறையலாம்." },
+};
+const LOCALE: Record<Lang, string> = { en: "en-IN", hi: "hi-IN", ta: "ta-IN" };
+
+function Bubble({ who, time, text, lang, listen, stop, english }: { who: "team" | "you"; time: string; text: string; lang: Lang; listen?: string; stop?: string;
+  english?: string }) {
   return (
     <div className={`bubble ${who}`}>
       <p>{text}</p>
-      <div className="b-foot"><span className="small">{time}</span>{who === "team" && listen && <Listen text={text} lang={lang} label={listen} stopLabel={stop} />}</div>
+      <div className="b-foot"><span className="small">{time}</span>{who === "team" && listen && <Listen text={text} lang={lang} label={listen} stopLabel={stop} english={english} compact />}</div>
     </div>
   );
 }
@@ -65,8 +92,16 @@ export function Phone() {
   const t = P[lang], st = SHARE_T[lang];
   const first = det.patient.name.split(" ")[0];
   const me: Session = { role: "patient", name: first, pid: id };
-  const text = (m: typeof msgs[number]) => {
+  const text = (m: typeof msgs[number], l: Lang = lang): string => {
+    const t = P[l], st = SHARE_T[l], lang_ = l;
     if (m.key === "nudge") return fill(t.nudge, { name: first, peak: m.params.peak ?? "", lever: st[m.params.lever ?? "walk15"] ?? "", after: m.params.after ?? "" });
+    if (m.key === "festival") {
+      const ft = FEST_T[lang_], pr = m.params;
+      const date = pr.date ? new Date(`${pr.date}T12:00:00+05:30`).toLocaleDateString(LOCALE[lang_], { day: "numeric", month: "long", timeZone: "Asia/Kolkata" }) : "";
+      // A suggestion that saves only a few minutes is not worth a number; say what generally helps instead.
+      const tip = (pr.saved_min ?? 0) < 15 ? ft.general : fill(ft[(pr.tip ?? "walk") as "walk"], { dish: DISH[pr.dish ?? ""]?.[lang_] ?? pr.dish ?? "", saved: pr.saved_min ?? "" });
+      return fill(ft.msg, { name: first, festival: FEST[pr.local_name ?? ""]?.[lang_] ?? pr.local_name ?? "", date, extra: pr.extra_min ?? "", tip });
+    }
     if (m.key === "thanks_plan") return fill(t.thanksPlan, { peak: m.params.peak ?? "" });
     if (m.key === "thanks_not") return t.thanksNot;
     return t[m.key] ?? m.text;
@@ -96,10 +131,15 @@ export function Phone() {
       </div>
       <div className="phone" aria-label={`${first}'s phone`}>
         <div className="phone-head"><b>{t.head}</b><span className="small">{det.patient.name}</span></div>
+        {msgs.some(m => m.from !== "patient") && (
+          <div className="phone-listen"><Listen text={msgs.filter(m => m.from !== "patient").map(m => text(m)).join(" ")} lang={lang}
+            label={lang === "hi" ? "सभी संदेश सुनें" : lang === "ta" ? "எல்லா செய்திகளையும் கேளுங்கள்" : "Listen to all"} stopLabel={t.stop}
+            english={msgs.filter(m => m.from !== "patient").map(m => text(m, "en")).join(" ")} /></div>
+        )}
         <div className="thread">
           {!msgs.length && <p className="small muted">{t.none}</p>}
           {msgs.map(m => (
-            <Bubble key={m.id} who={m.from === "patient" ? "you" : "team"} time={hhmm(m.t)} text={text(m)} lang={lang}
+            <Bubble key={m.id} who={m.from === "patient" ? "you" : "team"} time={hhmm(m.t)} text={text(m)} lang={lang} english={text(m, "en")}
               listen={m.from === "patient" ? undefined : t.listen} stop={t.stop} />
           ))}
           {awaiting && <Bubble who="team" time={hhmm(msgs[lastNudge].t)} text={t.ask} lang={lang} listen={t.listen} stop={t.stop} />}

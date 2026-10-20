@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
-import { api, dayMonth, dayToDate, fmt, glu, gluUnit, hhmm, minuteToDate, T, type Forecast, type Obs, type PatientDetail, type Timeline } from "../api";
+import { api, dayMonth, dayToDate, fmt, glu, gluUnit, hhmm, minuteToDate, T, type Backtest, type Forecast, type Obs, type PatientDetail, type Timeline } from "../api";
 import { Activity } from "../components/Activity";
 import { AgpChart } from "../components/AgpChart";
 import { AlertBanner } from "../components/AlertBanner";
@@ -118,6 +118,17 @@ function stepsPreview(tl: Timeline | null): string {
   return `${Math.round(steps).toLocaleString("en-IN")} steps in the last 3 hours${hrNow ? `, heart rate ${fmt(hrNow)} now` : ""}`;
 }
 
+function ComingUp({ id }: { id: string }) {
+  const rows = useLiveData(() => api.patientFestivals(id), [id]).data ?? [];
+  const r = rows.filter(x => x.extra_hours_above >= 0.25).sort((a, b) => b.extra_hours_above - a.extra_hours_above)[0];
+  if (!r) return null;
+  const tip = r.best === "walk" ? "a 15 minute walk after the festive meal" : r.best === "smaller_fast" ? "a smaller fast meal" : `half the usual helping of ${r.dish}`;
+  return (
+    <p className="coming-up">Coming up: {r.festival_local} on {dayMonth(r.date ?? "")}. The forecast expects about {fmt(r.extra_hours_above * 60)} more minutes
+      above 180 than on a usual day; {tip} would take about {fmt(r.best_saved_hours * 60)} minutes off. <Link to="/festivals">Festival planner</Link></p>
+  );
+}
+
 function WalkNote({ id, first }: { id: string; first: string }) {
   const acts = useLiveData(() => api.activities(id), [id]).data ?? [];
   const r = useLiveData(() => api.walkResult(id), [id]).data;
@@ -161,6 +172,7 @@ export function Today() {
       <section aria-label="Glucose">
         <Headline fc={fc} />
         <WalkNote id={id} first={detail.patient.name.split(" ")[0]} />
+        <ComingUp id={id} />
         <Sharpen pid={id} />
         {tl ? (
           <TableView title="Glucose, last 12 hours and forecast"
@@ -195,19 +207,40 @@ export function Today() {
 function TwinFit({ id }: { id: string }) {
   const { can, refresh, toast } = useLive();
   const h = useLiveData(() => api.twinHealth(id), [id]).data;
-  const [busy, setBusy] = useState(false);
+  const [bt, setBt] = useState<Backtest | null>(null);
+  const [busy, setBusy] = useState<"" | "check" | "refit">("");
   if (!h) return <p className="empty">Checking the fit.</p>;
+  const check = () => { setBusy("check"); api.refitBacktest(id).then(setBt).finally(() => setBusy("")); };
   const refit = () => {
-    setBusy(true);
-    api.refit(id).then(r => { refresh(); toast({ text: `Refitted on the last week: fit error ${fmt(r.rmse_before)} to ${fmt(r.rmse_after)} mg/dL.`, undo: () => api.undoRefit(id, r.id) }); })
-      .catch(e => toast({ text: e.message, error: true })).finally(() => setBusy(false));
+    setBusy("refit");
+    api.refit(id).then(r => { refresh(); toast({ text: `Refitted on the last week: fit error on that week ${fmt(r.rmse_before)} to ${fmt(r.rmse_after)} mg/dL.`, undo: () => api.undoRefit(id, r.id) }); })
+      .catch(e => toast({ text: e.message, error: true })).finally(() => setBusy(""));
   };
+  const maxR = Math.max(1, ...(h.weeks ?? []).map(w => w.rmse));
   return (
     <div className={`fit ${h.status}`}>
       <div><b>{h.status === "drifting" ? "Fit is drifting" : h.status === "good" ? "Fitting well" : "Too early to check the fit"}</b></div>
       <p className="small">{T(h.text)}</p>
-      {h.refit && <p className="small muted">Refitted {dayMonth(h.refit.t)} {hhmm(h.refit.t)} by {h.refit.by}: fit error {fmt(h.refit.rmse_before)} to {fmt(h.refit.rmse_after)} mg/dL on that week.</p>}
-      {can("plan") && h.status !== "too early" && <button className="btn" disabled={busy} onClick={refit}>{busy ? "Refitting" : "Refit on the last week"}</button>}
+      {h.weeks && h.weeks.length > 0 && (
+        <table className="kv num fit-weeks"><tbody>
+          {h.weeks.map(w => (
+            <tr key={w.from}><td>{dayMonth(w.from)} to {dayMonth(w.to)}</td>
+              <td><span className="fit-bar" style={{ width: `${(w.rmse / maxR) * 100}%` }} aria-hidden="true" /></td>
+              <td>{glu(w.rmse)} {gluUnit()}{Math.abs(w.bias) > 8 ? `, reads ${glu(Math.abs(w.bias))} ${w.bias > 0 ? "high" : "low"}` : ""}</td></tr>
+          ))}
+        </tbody></table>
+      )}
+      {h.refit && <p className="small muted">Refitted {dayMonth(h.refit.t)} {hhmm(h.refit.t)} by {h.refit.by}.{h.refit.backtest?.text ? ` Before refitting: ${T(h.refit.backtest.text)}` : ""}</p>}
+      {h.status !== "too early" && !h.refit && (
+        <div className="row-actions">
+          {!bt && <button className="btn" disabled={busy !== ""} onClick={check}>{busy === "check" ? "Testing a refit on recent days" : "Would a refit help?"}</button>}
+          {bt && <p className={`small ${bt.available && bt.helps ? "" : "muted"}`}>{bt.available ? T(bt.text) : bt.reason}</p>}
+          {can("plan") && <button className={`btn ${bt?.helps ? "primary" : ""}`} disabled={busy !== ""} onClick={refit}>
+            {busy === "refit" ? "Refitting" : bt && bt.available && !bt.helps ? "Refit anyway" : "Refit on the last week"}</button>}
+        </div>
+      )}
+      <p className="small muted">The test refits on the week that ended three days ago and compares old and new on the days since; the fit error on
+        the week used for fitting always improves, so it says nothing on its own. Drift that comes and goes (an illness, a festival) is not fixed by refitting.</p>
     </div>
   );
 }

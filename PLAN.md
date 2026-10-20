@@ -140,3 +140,10 @@ Produces `data/raw/` (FHIR style EHR bundles, device style exports for hero pati
 - [x] Fixed: glucose already above 180 now has its own card instead of No alerts.
 - [x] 49 tests pass; accessibility audit clean on 13 screens and the interactive panels in both themes.
 
+## Version 1.5.1: the smaller ideas, taken further
+
+- [x] Festival planner: state specific festival and dish, each patient's best suggestion and minutes saved, messages to one patient or all in their language, call list, coming up line on Today.
+- [x] Ward what if: every change at once against each patient's own best change, optionally with possible highs; message each patient their best change (skips anyone messaged in the last 6 hours).
+- [x] Twin health: week by week error, an out of sample refit test before refitting, refit wording that follows the test, fit scan started with the service.
+- [x] Listening: sentence by sentence with progress, slower option, voice picker, units in words, English fallback when no Hindi or Tamil voice, listen to all messages.
+

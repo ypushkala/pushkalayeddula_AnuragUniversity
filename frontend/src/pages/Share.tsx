@@ -145,6 +145,10 @@ export function Share() {
   const leverText = helpful.map(l => `${t[LEVER_KEY(l.request)]}: ${fill(t.line, { x: fmt(-l.peak) })}`);
   const date = clock ? new Date(clock.now).toLocaleDateString(lang === "en" ? "en-GB" : lang === "hi" ? "hi-IN" : "ta-IN",
     { day: "numeric", month: "long", timeZone: "Asia/Kolkata" }) : "";
+  const en = SHARE_T.en;
+  const englishText = [fill(en.title, { name: first }), ...(st ? [fill(en.now, { g: fmt(st.glucose) }),
+    st.peak > 180 ? fill(en.forecast, { peak: fmt(st.peak), time: hhmm(minuteToDate(st.peak_minute)) }) : en.calm] : []),
+    en.head, ...helpful.map(l => `${en[LEVER_KEY(l.request)]}: ${fill(en.line, { x: fmt(-l.peak) })}`)].join(". ");
   const shareText = [...lines, "", t.head + ":", ...leverText.map(x => `- ${x}`), "", t.disclaimer].join("\n");
 
   return (
@@ -160,7 +164,8 @@ export function Share() {
         <a className="btn primary" href={`https://wa.me/?text=${encodeURIComponent(shareText)}`} target="_blank" rel="noreferrer">{t.share}</a>
       </div>
       <h1>{lines[0]}</h1>
-      <div className="no-print"><Listen text={[...lines, t.head, ...leverText].join(". ")} lang={lang} label={LISTEN[lang][0]} stopLabel={LISTEN[lang][1]} /></div>
+      <div className="no-print"><Listen text={[...lines, t.head, ...leverText].join(". ")} lang={lang} label={LISTEN[lang][0]} stopLabel={LISTEN[lang][1]}
+        english={englishText} /></div>
       {st && <p className="share-now">{lines[1]}<br />{lines[2]}</p>}
       <h2>{t.head}</h2>
       {helpful.length ? (
