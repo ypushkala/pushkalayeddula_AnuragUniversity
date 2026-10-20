@@ -87,7 +87,7 @@ def deriv(x: np.ndarray, p: dict, u: dict) -> np.ndarray:
 
 
 def run_rk4(p: dict, x0: np.ndarray, u: Inputs, obs: np.ndarray | None = None, gain: float = 0.5,
-            obs_until: int | None = None) -> tuple[np.ndarray, np.ndarray]:
+            obs_until: int | None = None, record: list | None = None) -> tuple[np.ndarray, np.ndarray]:
     """Integrate S steps. Returns glucose at the start of every step plus the end, [B, S+1], and the final state.
 
     obs: CGM readings [B, S] used as a Luenberger style correction of G at the start of
@@ -105,6 +105,8 @@ def run_rk4(p: dict, x0: np.ndarray, u: Inputs, obs: np.ndarray | None = None, g
             ok = ~np.isnan(y)
             x[0, ok] += gain * (y[ok] - x[0, ok])
         G[:, s] = x[0]
+        if record is not None:
+            record.append(x.copy())
         c = u.column(s)
         k1 = deriv(x, p, c)
         k2 = deriv(x + 0.5 * DT * k1, p, c)

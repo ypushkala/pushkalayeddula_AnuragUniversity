@@ -11,9 +11,10 @@ import { Hint } from "../components/Hint";
 import { FactorBars } from "../components/FactorBars";
 import { ForecastChart } from "../components/ForecastChart";
 import { PatientList, useQueue } from "../components/PatientList";
+import { Sharpen } from "../components/Sharpen";
 import { SkeletonBlock } from "../components/Skeleton";
 import { TableView } from "../components/TableView";
-import { useLiveData } from "../live";
+import { useLive, useLiveData } from "../live";
 import { HeartWeek } from "./Cardio";
 import { trendWord } from "./Ward";
 
@@ -117,6 +118,20 @@ function stepsPreview(tl: Timeline | null): string {
   return `${Math.round(steps).toLocaleString("en-IN")} steps in the last 3 hours${hrNow ? `, heart rate ${fmt(hrNow)} now` : ""}`;
 }
 
+function WalkNote({ id, first }: { id: string; first: string }) {
+  const acts = useLiveData(() => api.activities(id), [id]).data ?? [];
+  const r = useLiveData(() => api.walkResult(id), [id]).data;
+  if (!acts.length) return null;
+  const a = acts[acts.length - 1];
+  return (
+    <p className="walk-note">
+      {a.source === "patient" ? `${first} said` : `${a.by} recorded`} a {a.minutes} minute walk {a.done ? `at ${hhmm(a.start_t)}` : "after dinner"}.{" "}
+      {r?.available ? <>Highest glucose since: {glu(r.peak_with)}; the same evening without the walk would have reached {glu(r.peak_without)} (reference simulator).</>
+        : a.done ? "The effect shows over the next hour." : "The forecast already includes it."}
+    </p>
+  );
+}
+
 export function Today() {
   const { id = "" } = useParams();
   const { detail } = usePatient();
@@ -145,6 +160,8 @@ export function Today() {
     <div className="today">
       <section aria-label="Glucose">
         <Headline fc={fc} />
+        <WalkNote id={id} first={detail.patient.name.split(" ")[0]} />
+        <Sharpen pid={id} />
         {tl ? (
           <TableView title="Glucose, last 12 hours and forecast"
             columns={["Time", `Measured, ${gluUnit()}`, `Forecast, ${gluUnit()}`, "Likely range"]}
@@ -171,6 +188,26 @@ export function Today() {
           </Disclosure>
         </div>
       )}
+    </div>
+  );
+}
+
+function TwinFit({ id }: { id: string }) {
+  const { can, refresh, toast } = useLive();
+  const h = useLiveData(() => api.twinHealth(id), [id]).data;
+  const [busy, setBusy] = useState(false);
+  if (!h) return <p className="empty">Checking the fit.</p>;
+  const refit = () => {
+    setBusy(true);
+    api.refit(id).then(r => { refresh(); toast({ text: `Refitted on the last week: fit error ${fmt(r.rmse_before)} to ${fmt(r.rmse_after)} mg/dL.`, undo: () => api.undoRefit(id, r.id) }); })
+      .catch(e => toast({ text: e.message, error: true })).finally(() => setBusy(false));
+  };
+  return (
+    <div className={`fit ${h.status}`}>
+      <div><b>{h.status === "drifting" ? "Fit is drifting" : h.status === "good" ? "Fitting well" : "Too early to check the fit"}</b></div>
+      <p className="small">{T(h.text)}</p>
+      {h.refit && <p className="small muted">Refitted {dayMonth(h.refit.t)} {hhmm(h.refit.t)} by {h.refit.by}: fit error {fmt(h.refit.rmse_before)} to {fmt(h.refit.rmse_after)} mg/dL on that week.</p>}
+      {can("plan") && h.status !== "too early" && <button className="btn" disabled={busy} onClick={refit}>{busy ? "Refitting" : "Refit on the last week"}</button>}
     </div>
   );
 }
@@ -246,6 +283,7 @@ export function Record() {
         </>}
         <section className="block anchor" id="learned">
           <h2>What the glucose forecast has learned</h2>
+          <TwinFit id={id} />
           {d.calibrating ? (
             <p className="notice">Day {d.calibrating} of 7. Until the first week is over the forecast uses values estimated from the health record
               (HbA1c, BMI, age, medicines). Its ranges are wider and possible highs are shown, not pushed to the ward.</p>

@@ -6,6 +6,7 @@ const JUMPS: [string, string][] = [
   ["17:30", "2026-03-15T17:30:00+05:30"],
   ["18:00", "2026-03-15T18:00:00+05:30"],
   ["19:45", "2026-03-15T19:45:00+05:30"],
+  ["22:30", "2026-03-15T22:30:00+05:30"],
 ];
 
 /** Demo controls live apart from the clinical tool, in a strip at the bottom of the screen. */

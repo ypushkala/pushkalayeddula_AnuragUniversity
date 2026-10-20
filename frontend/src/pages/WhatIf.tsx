@@ -3,7 +3,10 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, dayMonth, fmt, glu, gluAbs, gluTick, gluUnit, hhmm, signed, T, type Horizon, type Lever, type PlanRec,
   type WhatIf as WhatIfRes, type WhatIfReq } from "../api";
+import { AskTwin } from "../components/AskTwin";
 import { Disclosure } from "../components/Disclosure";
+import { InsideTwin } from "../components/InsideTwin";
+import { RefCheck } from "../components/RefCheck";
 import { Hint } from "../components/Hint";
 import { PlotFigure, baseStyle } from "../components/PlotFigure";
 import { SkeletonBlock } from "../components/Skeleton";
@@ -101,6 +104,12 @@ export function WhatIf() {
 
   const choose = (patch: Partial<WhatIfReq>) => { touched.current = true; setReq(r => ({ ...r, ...NEUTRAL, ...patch })); };
   const set = (patch: Partial<WhatIfReq>) => { touched.current = true; setReq(r => ({ ...r, ...patch })); };
+  const applyAsked = (r: Partial<WhatIfReq>) => {
+    const h = (r.horizon_h ?? 6) as Horizon;
+    touched.current = true;
+    if (h !== horizon) { setHorizon(h); setRes(null); }
+    setReq({ ...NEUTRAL, scope: h > 6 ? "all" : "next", ...r, horizon_h: h } as WhatIfReq);
+  };
   const switchHorizon = (h: Horizon) => { touched.current = false; setHorizon(h); setRes(null); setReq(r => ({ ...r, ...NEUTRAL, horizon_h: h, scope: h > 6 ? "all" : "next" })); };
   if (res && !res.available) return <p className="empty">No recent glucose reading, so the forecast cannot replay a change.</p>;
 
@@ -171,6 +180,7 @@ export function WhatIf() {
   return (
     <div className="whatif-simple">
       <Plans pid={id} first={first} />
+      <AskTwin first={first} onApply={applyAsked} />
       <div className="wi-head">
         <div>
           <h2>Try a change for {first}</h2>
@@ -254,6 +264,14 @@ export function WhatIf() {
           </div>
         )}
       </div>
+
+      {!long && res && !same(req, {}) && <RefCheck pid={id} req={req} label={chosen?.label ?? "this change"} />}
+
+      {!long && (
+        <Disclosure title="See inside the twin" hint="food, insulin and walking, minute by minute, usual against the change">
+          <InsideTwin pid={id} req={req} label={chosen?.label ?? "the change"} />
+        </Disclosure>
+      )}
 
       <Disclosure title="Build your own change" hint={`walk, food, meal time, sleep, a missed dose, a night shift${t2d ? ", insulin" : ""}`}>
         <div className="controls-grid">

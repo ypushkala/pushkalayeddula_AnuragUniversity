@@ -115,3 +115,17 @@ def test_insulin_appearance_delivers_the_whole_dose():
     assert abs(total - 6.0) < 0.05
     basal = forecast.insulin_appearance(288, 70.0, [], 0.0, 12.0)
     assert np.allclose(basal, basal[0]) and abs(basal.sum() * 5 * forecast.INSULIN_VD_ML_PER_KG * 70.0 / 1e6 - 12.0) < 0.05
+
+
+@needs_data
+def test_reference_simulator_restarts_exactly_and_answers_what_ifs():
+    from prativimb import config
+    from prativimb.data import reference
+    truth = pd.read_parquet(config.PROCESSED_DIR / "truth_glucose.parquet", filters=[("pid", "==", "PTV-0001")]).set_index("minute")
+    t = 29 * 1440 + 19 * 60 + 45
+    base, _ = reference.changed_inputs("PTV-0001", t, 200, reference.Change())
+    gs = reference.run_from("PTV-0001", t, base)[::5]
+    assert np.abs(gs - truth.gs.loc[t: t + 199].to_numpy()[: len(gs)]).max() < 0.05
+    walk = reference.what_if("PTV-0001", t, 240, reference.Change(walk_minutes=15))
+    half = reference.what_if("PTV-0001", t, 240, reference.Change(swap="half_portion"))
+    assert walk["delta"]["peak"] < -3 and half["delta"]["peak"] < walk["delta"]["peak"]

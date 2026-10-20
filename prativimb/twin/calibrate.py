@@ -69,15 +69,18 @@ def from_z(z: np.ndarray) -> np.ndarray:
     return np.where(LOG, np.exp(np.where(LOG, z, 0.0)), z)
 
 
-def _origins(s: Series, days: int) -> np.ndarray:
-    ks = np.arange(PER_DAY // 4, days * PER_DAY - H_CAL, 24)
+def _origins(s: Series, days: int, start_day: int = 0) -> np.ndarray:
+    ks = np.arange(start_day * PER_DAY + PER_DAY // 4, (start_day + days) * PER_DAY - H_CAL, 24)
+    ks = ks[ks < len(s.cgm) - H_CAL]
     return ks[~np.isnan(s.cgm[ks])]
 
 
-def calibrate(s: Series, prior: Prior | None = None, max_nfev: int = 40, days: int | None = None) -> tuple[np.ndarray, dict]:
+def calibrate(s: Series, prior: Prior | None = None, max_nfev: int = 40, days: int | None = None,
+              start_day: int = 0) -> tuple[np.ndarray, dict]:
+    """Fit the personal parameters on `days` days from `start_day` (the first week by default; a later week to refit)."""
     prior = prior or ehr_prior(s.ehr)
     pp = forecast.prepare(s)
-    ks = _origins(s, days or config.CALIBRATION_DAYS)
+    ks = _origins(s, days or config.CALIBRATION_DAYS, start_day)
     u, obs = forecast.build(pp, ks, H_CAL, future="actual")
     y = forecast._take(s.cgm, ks[:, None] + np.arange(1, H_CAL + 1)[None, :], np.nan)
     mask = ~np.isnan(y)

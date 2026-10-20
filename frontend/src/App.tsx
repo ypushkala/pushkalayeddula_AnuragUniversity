@@ -8,9 +8,11 @@ import { GROUP_NAMES, needsAttention, nextUnseen, patientLink } from "./componen
 import { Toasts } from "./components/Toasts";
 import { LiveProvider, store, stored, useLive, useLiveData } from "./live";
 import { Digest } from "./pages/Digest";
+import { Festivals } from "./pages/Festivals";
 import { Handover } from "./pages/Handover";
 import { ModelCard } from "./pages/ModelCard";
 import { Note } from "./pages/Note";
+import { Phone } from "./pages/Phone";
 import { Patient, Record, Today } from "./pages/Patient";
 import { Share } from "./pages/Share";
 import { SignIn } from "./pages/SignIn";
@@ -157,6 +159,7 @@ function Shell() {
             <NavLink to="/" end>Ward</NavLink>
             <NavLink to="/handover">Handover</NavLink>
             <NavLink to="/digest">Daily digest</NavLink>
+            <NavLink to="/festivals">Festivals</NavLink>
             <NavLink to="/model">About the model</NavLink>
           </nav>
         </div>
@@ -173,6 +176,7 @@ function Shell() {
           <Route path="/" element={<Ward />} />
           <Route path="/handover" element={<Handover />} />
           <Route path="/digest" element={<Digest />} />
+          <Route path="/festivals" element={<Festivals />} />
           <Route path="/model" element={<ModelCard />} />
           <Route path="/patient/:id" element={<Patient />}>
             <Route index element={<Today />} />
@@ -186,7 +190,7 @@ function Shell() {
       </main>
       <footer className="footer">
         <span>Synthetic data only. Decision support, not a diagnosis.</span>
-        <span>Prativimb 1.4, MIT licence</span>
+        <span>Prativimb 1.5, MIT licence</span>
       </footer>
       <DemoBar />
     </>
@@ -207,6 +211,7 @@ export default function App() {
           <Routes>
             <Route path="/signin" element={<SignIn />} />
             <Route path="/share/:id" element={<Share />} />
+            <Route path="/phone/:id" element={<Phone />} />
             <Route path="/note/:id" element={<Note />} />
             <Route path="*" element={<Shell />} />
           </Routes>

@@ -16,7 +16,7 @@ export interface WardRow {
   id: string; name: string; age: number; sex: string; problems: string[]; hba1c: number;
   glucose: number | null; trend30: number | null; sparkline: (number | null)[];
   event_a: EventA | null; event_b: EventB; last_sync: string | null; priority: number; hero: boolean; split: string;
-  group: Group | null; seen: boolean; sharing_paused: string[]; calibrating: number | null;
+  group: Group | null; seen: boolean; sharing_paused: string[]; calibrating: number | null; twin_fit?: string;
 }
 export type Group = "low" | "high" | "heart" | "watch";
 export interface Ward { clock: Clock; patients: WardRow[]; alert_level: number; cardio_threshold: number }
@@ -66,6 +66,27 @@ export interface ConsentRow { source: "cgm" | "wearable" | "abdm"; name: string;
 export interface HandoverRow { t: string; pid: string; name: string; who: string; what: string; note: string }
 export interface HandoverItem { pid: string; name: string; group: Group; glucose: number | null; reason: string }
 export interface Handover { from: string; to: string; hours: number; done: HandoverRow[]; open: HandoverItem[]; seen_still_active: HandoverItem[] }
+export interface RefCheck { available: boolean; reason?: string; window_min: number; origin: string; times: string[];
+  reference: { baseline: number[]; scenario: number[]; delta: { peak: number; tar_min: number; mean: number; tir_pct: number } };
+  twin: { peak: number; tar_min: number }; agree: boolean; assumed_meal: { time: string; carbs: number } | null;
+  actual_meal: { time: string; carbs: number } | null; note: string }
+export interface Sharpen { items: { kind: string; action: string; gain: number; text: string; detail: string }[];
+  range?: { lo: number; hi: number; time: string } }
+export type InsideSeries = Record<"G" | "stomach_g" | "gut_g" | "into_blood" | "insulin" | "action" | "activity" | "out_of_blood", number[]>;
+export interface Inside { available: boolean; times: string[]; usual: InsideSeries; change: InsideSeries; meal_step: number | null }
+export interface TwinHealth { status: "good" | "drifting" | "too early"; text: string; rmse_then?: number; rmse_now?: number; bias_now?: number;
+  refit: { t: string; by: string; rmse_before: number; rmse_after: number; id: string } | null }
+export interface Parsed { request: Partial<WhatIfReq>; understood: string[]; parser: string; unclear?: string }
+export interface WardWhatIf { lever: string; levers: string[]; hours_saved: number; mean_peak_drop: number;
+  patients: { pid: string; name: string; peak_before: number; peak_after: number; hours_above_before: number; hours_above_after: number }[] }
+export interface Festival { key: string; name: string; date: string; about: string; suggest: string; patients: number; total_extra_hours: number;
+  most_affected: { pid: string; name: string; usual_peak: number; festival_peak: number; extra_hours_above: number }[] }
+export interface ActivityRec { id: string; pid: string; kind: "walk"; start: number; minutes: number; by: string; source: string;
+  start_t: string; done: boolean }
+export interface MessageRec { id: string; pid: string; from: "patient" | "care team"; key: string; text: string; t: string; by: string;
+  params: { peak?: number; after?: number; lever?: string } }
+export interface WalkResult { available: boolean; pending?: boolean; start?: string; minutes?: number; peak_with?: number; peak_without?: number;
+  minutes_above_with?: number; minutes_above_without?: number }
 export interface Digest { date: string; patients: number; alerts: number; lows: number; alerts_happened: number; alerts_total: number;
   alerts_per_patient: number; tir: number; heart_flags: { pid: string; name: string }[];
   most_alerts: { pid: string; name: string; alerts: number; lows: number }[]; actions: { seen: number; actions: number; meals: number } }
@@ -171,10 +192,28 @@ export const api = {
   consent: (id: string) => j<ConsentRow[]>(`/api/patients/${id}/consent`),
   setConsent: (id: string, body: { source: string; granted: boolean }, as?: Session) =>
     j<unknown>(`/api/patients/${id}/consent`, post(body), as),
+  reference: (id: string, req: WhatIfReq) => j<RefCheck>(`/api/patients/${id}/reference`, post(req)),
+  sharpen: (id: string) => j<Sharpen>(`/api/patients/${id}/sharpen`),
+  inside: (id: string, req: WhatIfReq) => j<Inside>(`/api/patients/${id}/inside`, post(req)),
+  twinHealth: (id: string) => j<TwinHealth>(`/api/patients/${id}/twin-health`),
+  refit: (id: string) => j<{ id: string; rmse_before: number; rmse_after: number }>(`/api/patients/${id}/refit`, { method: "POST" }),
+  undoRefit: (id: string, rid: string) => j<unknown>(`/api/patients/${id}/refit/${rid}`, { method: "DELETE" }),
+  ask: (text: string) => j<Parsed>("/api/ask", post({ text })),
+  wardWhatIf: (lever: string) => j<WardWhatIf>(`/api/ward/whatif?lever=${encodeURIComponent(lever)}`),
+  festivals: () => j<{ festivals: Festival[] }>("/api/festivals"),
+  activities: (id: string) => j<ActivityRec[]>(`/api/patients/${id}/activities`),
+  addActivity: (id: string, body: { minutes: number; when: "after_next_meal" | "now" | "done"; minutes_ago?: number }, as?: Session) =>
+    j<ActivityRec>(`/api/patients/${id}/activities`, post({ kind: "walk", ...body }), as),
+  removeActivity: (id: string, aid: string, as?: Session) => j<unknown>(`/api/patients/${id}/activities/${aid}`, { method: "DELETE" }, as),
+  messages: (id: string) => j<MessageRec[]>(`/api/patients/${id}/messages`),
+  addMessage: (id: string, body: { key: string; text?: string; params?: Record<string, unknown> }, as?: Session) =>
+    j<MessageRec>(`/api/patients/${id}/messages`, post(body), as),
+  removeMessage: (id: string, mid: string, as?: Session) => j<unknown>(`/api/patients/${id}/messages/${mid}`, { method: "DELETE" }, as),
+  walkResult: (id: string) => j<WalkResult>(`/api/patients/${id}/walk-result`),
   handover: (hours = 12) => j<Handover>(`/api/handover?hours=${hours}`),
   digest: () => j<Digest>("/api/digest"),
   audit: (id?: string) => j<AuditRow[]>(`/api/audit${id ? `?pid=${id}` : ""}`),
-  modelCard: () => j<{ metrics: any; alert_level: number; cardio_threshold: number; figures: string[]; followup: any }>("/api/model-card"),
+  modelCard: () => j<{ metrics: any; alert_level: number; cardio_threshold: number; figures: string[]; followup: any; counterfactual: any }>("/api/model-card"),
 };
 
 // Display preferences, set from Settings. The service always works in mg/dL and India time.

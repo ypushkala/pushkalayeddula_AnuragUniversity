@@ -6,12 +6,13 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, fmt, hhmm, minuteToDate, type Lever, type Session } from "../api";
 import { ConsentPanel } from "../components/ConsentPanel";
+import { Listen } from "../components/Listen";
 import { store, stored, useLive, useLiveData } from "../live";
 
-type Lang = "en" | "hi" | "ta";
+export type Lang = "en" | "hi" | "ta";
 
 // Lever wording keyed by the request the twin simulated.
-const LEVER_KEY = (r: Lever["request"]): string => {
+export const LEVER_KEY = (r: Lever["request"]): string => {
   if (r.walk_minutes && r.swap === "millet") return "combo";
   if (r.walk_minutes === 15) return "walk15";
   if (r.walk_minutes === 30) return "walk30";
@@ -21,7 +22,7 @@ const LEVER_KEY = (r: Lever["request"]): string => {
   return "other";
 };
 
-const T: Record<Lang, Record<string, string>> = {
+export const SHARE_T: Record<Lang, Record<string, string>> = {
   en: {
     logHead: "Tell your care team about a meal", logNote: "It goes straight into your glucose forecast.", when: "When", food: "Food", size: "How much",
     eatnow: "Eating now", ago: "Ate 30 minutes ago", later: "In 1 hour", small: "Small", usual: "Usual", large: "Large", send: "Send",
@@ -84,7 +85,9 @@ const T: Record<Lang, Record<string, string>> = {
   },
 };
 
-const fill = (s: string, v: Record<string, string | number>) => s.replace(/\{(\w+)\}/g, (_, k) => String(v[k] ?? ""));
+const LISTEN: Record<Lang, [string, string]> = { en: ["Listen", "Stop"], hi: ["सुनें", "रोकें"], ta: ["கேளுங்கள்", "நிறுத்து"] };
+
+export const fill = (s: string, v: Record<string, string | number>) => s.replace(/\{(\w+)\}/g, (_, k) => String(v[k] ?? ""));
 
 const FOODS: [string, number][] = [["rice_meal", 90], ["roti_meal", 70], ["millet_meal", 60], ["idli_dosa", 55], ["poha_upma", 50],
   ["biryani", 95], ["tea_snack", 20], ["fruit", 25]];
@@ -126,7 +129,7 @@ export function Share() {
   const det = useLiveData(() => api.patient(id), [id]).data;
   const fc = useLiveData(() => api.forecast(id), [id]).data;
   const lev = useLiveData(() => api.levers(id), [id]).data;
-  const t = T[lang];
+  const t = SHARE_T[lang];
   if (!det || !fc || !lev) return <main className="share" lang={lang}><p className="empty">Preparing.</p></main>;
   const first = det.patient.name.split(" ")[0];
   // Whoever opens the patient's link acts as the patient (as with a link sent by message); a signed in clinician stays themselves.
@@ -157,6 +160,7 @@ export function Share() {
         <a className="btn primary" href={`https://wa.me/?text=${encodeURIComponent(shareText)}`} target="_blank" rel="noreferrer">{t.share}</a>
       </div>
       <h1>{lines[0]}</h1>
+      <div className="no-print"><Listen text={[...lines, t.head, ...leverText].join(". ")} lang={lang} label={LISTEN[lang][0]} stopLabel={LISTEN[lang][1]} /></div>
       {st && <p className="share-now">{lines[1]}<br />{lines[2]}</p>}
       <h2>{t.head}</h2>
       {helpful.length ? (

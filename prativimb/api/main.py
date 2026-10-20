@@ -17,8 +17,9 @@ from fastapi.staticfiles import StaticFiles
 from prativimb import config
 from prativimb.api import note_pdf
 from prativimb.api.clock import DemoClock
-from prativimb.api.schemas import (Acknowledge, Action, ClockUpdate, Consent, MealEntry, PatientDetail, Plan,
-                                   WhatIfRequest)
+from prativimb.api import ask as ask_mod
+from prativimb.api.schemas import (Acknowledge, Action, Activity, Ask, ClockUpdate, Consent, MealEntry, Message,
+                                   PatientDetail, Plan, WhatIfRequest)
 from prativimb.data.cohort import MEAL_TYPES
 from prativimb.api.services import AppState, clean, iso
 
@@ -82,6 +83,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 def state() -> AppState:
     if STATE is None:
         raise HTTPException(503, "Loading")
+    STATE.sync(CLOCK.minute())
     return STATE
 
 
@@ -257,6 +259,161 @@ def set_consent(pid: str, c: Consent, who=Depends(actor)):
     return state().store.set_consent(check(pid), c.source, c.granted, who[1], int(CLOCK.minute()), who[0])
 
 
+@app.post("/api/patients/{pid}/reference")
+def reference_check(pid: str, req: WhatIfRequest):
+    return state().reference_check(check(pid), CLOCK.minute(), req.model_dump())
+
+
+@app.get("/api/patients/{pid}/sharpen")
+def sharpen(pid: str):
+    return state().sharpen(check(pid), CLOCK.minute())
+
+
+@app.post("/api/patients/{pid}/inside")
+def inside(pid: str, req: WhatIfRequest):
+    return state().inside(check(pid), CLOCK.minute(), req.model_dump())
+
+
+@app.get("/api/patients/{pid}/twin-health")
+def twin_health(pid: str):
+    return state().twin_health(check(pid), CLOCK.minute())
+
+
+@app.post("/api/patients/{pid}/refit")
+def refit(pid: str, who=Depends(actor)):
+    need(who, ("doctor",), "refit a patient's twin")
+    return state().refit_twin(check(pid), CLOCK.minute(), who[1])
+
+
+@app.delete("/api/patients/{pid}/refit/{rid}")
+def undo_refit(pid: str, rid: str, who=Depends(actor)):
+    need(who, ("doctor",), "undo a refit")
+    if not state().store.remove_refit(check(pid), rid, who[1], int(CLOCK.minute())):
+        raise HTTPException(404, "No such refit")
+    return {"removed": rid}
+
+
+@app.post("/api/ask")
+def ask(q: Ask):
+    return ask_mod.parse(q.text)
+
+
+@app.get("/api/ward/whatif")
+def ward_whatif(lever: str = Query("Walk 15 min after the meal", max_length=80)):
+    st = state()
+    if lever not in dict(st.LEVERS):
+        raise HTTPException(422, "Unknown change")
+    return st.ward_whatif(CLOCK.minute(), lever)
+
+
+@app.get("/api/festivals")
+def festivals():
+    return state().festivals(CLOCK.minute())
+
+
+@app.post("/api/patients/{pid}/activities")
+def add_activity(pid: str, a: Activity, who=Depends(actor)):
+    from prativimb.data import reference
+    from prativimb.twin import forecast as fc
+    st, pid = state(), check(pid)
+    now = int(CLOCK.minute())
+    planned = start = now
+    if a.when == "done":
+        planned = start = now - a.minutes_ago
+    elif a.when == "after_next_meal":
+        _, sched, _, _ = reference.patient_inputs(pid)
+        meal = reference.target_meal(sched, now - 30, 6 * 60)
+        if meal is None:
+            raise HTTPException(409, "No main meal in the next few hours to walk after.")
+        start = meal[0] + reference.WALK_DELAY
+        k = st.origin(pid, now)
+        exp = [m for m in fc.expected_meals(st.pp(pid, now), k, 72) if m[1] >= fc.MAIN_MEAL_G] if k is not None else []
+        planned = (k + exp[0][0]) * 5 + reference.WALK_DELAY if exp else start
+    rec = st.store.add_activity(pid, a.kind, start, a.minutes, who[1], now, "patient" if who[0] == "patient" else "clinician",
+                                planned_start=planned)
+    st.sync(CLOCK.minute())
+    return rec
+
+
+@app.delete("/api/patients/{pid}/activities/{aid}")
+def remove_activity(pid: str, aid: str, who=Depends(actor)):
+    if not state().store.remove_activity(check(pid), aid, who[1], int(CLOCK.minute())):
+        raise HTTPException(404, "No such activity")
+    return {"removed": aid}
+
+
+@app.get("/api/patients/{pid}/activities")
+def activities(pid: str):
+    st = state()
+    now = CLOCK.minute()
+    out = []
+    for a in st.store.activities_for(check(pid), now):
+        out.append({**a, "start_t": iso(a["start"]), "done": a["start"] + a["minutes"] <= now})
+    return clean(out)
+
+
+@app.get("/api/patients/{pid}/messages")
+def messages(pid: str):
+    return clean([{**m, "t": iso(m["minute"])} for m in state().store.messages_for(check(pid), CLOCK.minute())])
+
+
+@app.post("/api/patients/{pid}/messages")
+def add_message(pid: str, m: Message, who=Depends(actor)):
+    """A nudge from the care team (stored with the numbers it was sent with), or a patient's reply, which gets an
+    automatic acknowledgement carrying the forecast as it stands once the reply is taken into account."""
+    st, pid, now = state(), check(pid), int(CLOCK.minute())
+    if m.key == "nudge":
+        need(who, ("doctor", "nurse"), "send messages to patients")
+        return st.store.add_message(pid, "care team", "nudge", m.text, now, who[1], {k: v for k, v in m.params.items() if k in ("peak", "after", "lever")})
+    if who[0] != "patient":
+        raise HTTPException(403, "Only the patient replies from their phone.")
+    rec = st.store.add_message(pid, "patient", m.key, m.text, now, who[1])
+    if m.key == "not_today":
+        st.store.add_message(pid, "care team", "thanks_not", "", now, "Prativimb")
+    else:
+        fc = st.patient_forecast(pid, now, explain=False)
+        peak = fc["status"]["peak"] if fc.get("available") else None
+        st.store.add_message(pid, "care team", "thanks_plan", "", now, "Prativimb", {"peak": round(peak) if peak else None})
+    return rec
+
+
+@app.delete("/api/patients/{pid}/messages/{mid}")
+def remove_message(pid: str, mid: str, who=Depends(actor)):
+    """Removes a message; removing a patient's reply also removes the automatic acknowledgement made with it."""
+    st, pid, now = state(), check(pid), int(CLOCK.minute())
+    msg = next((x for x in st.store.messages if x["id"] == mid and x["pid"] == pid), None)
+    if msg is None or not st.store.remove_message(pid, mid, who[1], now):
+        raise HTTPException(404, "No such message")
+    if msg["from"] == "patient":
+        for x in [x for x in st.store.messages if x["pid"] == pid and x["key"].startswith("thanks") and x["minute"] == msg["minute"]]:
+            st.store.remove_message(pid, x["id"], who[1], now)
+    return {"removed": mid}
+
+
+@app.get("/api/patients/{pid}/walk-result")
+def walk_result(pid: str):
+    """After a logged walk: the evening as it went, against the same evening without the walk (the original replay)."""
+    st = state()
+    pid = check(pid)
+    now = CLOCK.minute()
+    walks = [a for a in st.store.activities_for(pid, now) if a["kind"] == "walk"]
+    orig = st.__dict__.get("_S_orig", {}).get(pid)
+    if not walks or orig is None:
+        return {"available": False}
+    a = walks[-1]
+    k0, k1 = a["start"] // 5, int(now // 5) + 1
+    if k1 <= k0 + 6:
+        return {"available": False, "pending": True, "start": iso(a["start"])}
+    import numpy as np
+    with_walk, without = st.S[pid].cgm[k0:k1], orig.cgm[k0:k1]
+    ok = ~np.isnan(with_walk) & ~np.isnan(without)
+    if not ok.any():
+        return {"available": False}
+    return clean({"available": True, "start": iso(a["start"]), "minutes": a["minutes"],
+                  "peak_with": float(np.nanmax(with_walk)), "peak_without": float(np.nanmax(without)),
+                  "minutes_above_with": int((with_walk[ok] > 180).sum() * 5), "minutes_above_without": int((without[ok] > 180).sum() * 5)})
+
+
 @app.get("/api/handover")
 def handover(hours: int = Query(12, ge=1, le=24)):
     return state().handover(CLOCK.minute(), hours)
@@ -299,8 +456,10 @@ def fhir_bundle(pid: str):
 def model_card():
     m = state().metrics
     fu = config.REPORT_DIR / "followup.json"
+    cf = config.REPORT_DIR / "counterfactual.json"
     return {"metrics": m, "alert_level": state().alert_cov, "cardio_threshold": state().cardio_threshold,
             "followup": json.loads(fu.read_text()) if fu.exists() else None,
+            "counterfactual": {k: v for k, v in json.loads(cf.read_text()).items() if k != "points"} if cf.exists() else None,
             "figures": sorted(p.name for p in config.FIGURE_DIR.glob("*.png"))}
 
 

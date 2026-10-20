@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, hhmm, T, type AlertCard } from "../api";
 import { useLive, useLiveData } from "../live";
+import { LEVER_KEY } from "../pages/Share";
 import { MealEntry } from "./MealEntry";
 
 const SNOOZE: [number, string][] = [[30, "30 min"], [60, "1 hour"], [120, "2 hours"], [240, "4 hours"]];
@@ -93,8 +94,12 @@ function ActionPanel({ pid, kind, alert, done }: { pid: string; kind: "call" | "
 
 /** The patient's most important alert with what you can do about it, on every tab. The first action fits the alert. */
 export function AlertBanner({ pid, first }: { pid: string; first: string }) {
-  const { can } = useLive();
+  const { can, refresh, toast } = useLive();
   const fc = useLiveData(() => api.forecast(pid), [pid]).data;
+  const msgs = useLiveData(() => api.messages(pid), [pid]).data;
+  const lastReply = (msgs ?? []).filter(m => m.from === "patient").slice(-1)[0];
+  const lastNudge = (msgs ?? []).filter(m => m.key === "nudge").slice(-1)[0];
+  const REPLY: Record<string, string> = { will_walk: "will walk after dinner", walked: "walked 15 minutes", not_today: "not today" };
   const [panel, setPanel] = useState<Panel>(null);
   if (!fc) return <div className="banner calm skeleton-block" style={{ height: 96 }} aria-busy="true" />;
   const cards = fc.alerts ?? [];
@@ -121,19 +126,32 @@ export function AlertBanner({ pid, first }: { pid: string; first: string }) {
   actions.push(<Link key="share" className="btn" to={`/share/${pid}`}>Share with {first}</Link>,
     <Link key="note" className="btn" to={`/note/${pid}`}>Clinical note</Link>);
 
+  const nudge = () => {
+    if (!fc.available) return;
+    api.levers(pid).then(lv => {
+      const walk = lv.levers.find(l => l.request.walk_minutes === 15 && !l.request.swap) ?? lv.levers[0];
+      return api.addMessage(pid, { key: "nudge", params: { peak: Math.round(fc.status.peak), after: Math.round(fc.status.peak + walk.peak), lever: LEVER_KEY(walk.request) } });
+    }).then(m => { refresh(); toast({ text: `Message sent to ${first}'s phone.`, undo: () => api.removeMessage(pid, m.id) }); })
+      .catch(e => toast({ text: e.message, error: true }));
+  };
   const alsoLink = (c: AlertCard) => (c.kind === "cardio" || c.kind === "event" ? `/patient/${pid}?heart=`
     : c.kind === "calibrating" ? `/patient/${pid}/record#learned` : `/patient/${pid}`);
   return (
     <section className={`banner ${urgent ? "alert" : "calm"}`} aria-label="Alerts and actions" aria-live="polite">
       <div className="banner-text">
         <div className="b-title">{main ? T(main.title) : fc.available ? "No alerts" : "No forecast"}</div>
-        <div className="b-detail">{main ? T(main.detail) : fc.available ? T("Glucose is expected to stay between 70 and 180 for the next 2 hours.") : fc.reason}</div>
+        <div className="b-detail">{main ? T(main.detail) : fc.available ? T(`Glucose ${Math.round(fc.status.glucose)} now; expected to stay between 70 and 180 for the next 2 hours.`) : fc.reason}</div>
         {main?.ack && <div className="ack">Seen by {main.ack.by} at {hhmm(main.ack.t!)}; quiet until {hhmm(main.ack.until_t!)}.{main.ack.note && ` "${main.ack.note}"`}</div>}
+        {lastNudge && !lastReply && <div className="b-more">Message sent to {first}'s phone at {hhmm(lastNudge.t)}; no reply yet.</div>}
+        {lastReply && <div className="b-reply">{first} replied at {hhmm(lastReply.t)}: {REPLY[lastReply.key] ?? lastReply.text}.</div>}
         {others.map(o => (
           <div key={o.kind} className="b-more">Also: <Link to={alsoLink(o)}>{T(o.title).toLowerCase()}</Link>{o.ack ? ` (seen by ${o.ack.by})` : ""}.</div>
         ))}
       </div>
-      <div className="banner-actions">{actions}</div>
+      <div className="banner-actions">{actions}
+        {(kind === "spike" || fc.status?.tier === "watch") && can("act") && !lastNudge &&
+          <button className="link-small link-btn" onClick={nudge}>Message {first} a walk suggestion</button>}
+        <Link className="link-small" to={`/phone/${pid}`}>{first}'s phone (demo)</Link></div>
       {panel === "seen" && <MarkSeen pid={pid} cards={open} done={() => setPanel(null)} />}
       {(panel === "call" || panel === "review" || panel === "check") && (
         <ActionPanel pid={pid} kind={panel} alert={kind} done={() => setPanel(null)} />

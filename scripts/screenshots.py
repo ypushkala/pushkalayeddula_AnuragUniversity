@@ -40,16 +40,30 @@ SHOTS = [
     ("19_first_week", "/patient/PTV-0001", "2026-02-17T19:45:00+05:30", "light", ".b-title", None),
     ("20_heart_banner", "/patient/PTV-0151?heart=", "2026-03-15T19:45:00+05:30", "light", "table.heat", None),
     ("21_signin", "/signin", "2026-03-15T19:45:00+05:30", "light", "fieldset.roles", "signedout"),
+    ("22_reference_check", "/patient/PTV-0001/try", "2026-03-15T19:45:00+05:30", "light", ".lever-card",
+     "steps:click=Walk 15 min and millets|wait=2500|click=Check against the reference simulator|wait=4000"),
+    ("23_inside_twin", "/patient/PTV-0001/try", "2026-03-15T19:45:00+05:30", "light", ".lever-card",
+     "steps:click=Walk 15 min and millets|wait=2500|sel=.disclosure summary >> text=See inside the twin|wait=2500|keys=.in-controls input[type=range]:ArrowRight:16|wait=800"),
+    ("24_ask_twin", "/patient/PTV-0001/try", "2026-03-15T19:45:00+05:30", "light", ".lever-card",
+     "steps:fill=#ask:What if he skips rice and walks after dinner for the next week?|click=Ask|wait=9000"),
+    ("25_phone_loop", "/phone/PTV-0001", "2026-03-15T22:30:00+05:30", "light", ".phone", "walkloop"),
+    ("26_walk_today", "/patient/PTV-0001", "2026-03-15T22:30:00+05:30", "light", ".walk-note", "walkloop"),
+    ("27_festivals", "/festivals", "2026-03-15T19:45:00+05:30", "light", ".fest", None),
+    ("28_ward_whatif", "/", "2026-03-15T19:45:00+05:30", "light", "table.ward tbody tr",
+     "steps:sel=.ward-whatif summary|wait=500|click=Walk 15 min after the meal|wait=7000"),
+    ("29_sharpen", "/patient/PTV-0001", "2026-03-15T19:45:00+05:30", "light", ".sharpen", None),
 ]
+PATIENT = {"X-Prativimb-Role": "patient", "X-Prativimb-User": "Ramesh"}
 
 
 SESSION = "localStorage.setItem('prativimb-session', JSON.stringify({role: 'doctor', name: 'Dr Rao'}));" \
           "localStorage.setItem('prativimb-hints', JSON.stringify(['banner', 'ward', 'difference']));"
 
 
-def call(method: str, path: str, body: dict | None = None) -> dict:
+def call(method: str, path: str, body: dict | None = None, who: dict | None = None) -> dict:
+    who = who or {"X-Prativimb-Role": "doctor", "X-Prativimb-User": "Dr%20Rao"}
     req = urllib.request.Request(f"{API}{path}", data=json.dumps(body).encode() if body is not None else None, method=method,
-                                 headers={"Content-Type": "application/json", "X-Prativimb-Role": "doctor", "X-Prativimb-User": "Dr%20Rao"})
+                                 headers={"Content-Type": "application/json", **who})
     return json.loads(urllib.request.urlopen(req).read())
 
 
@@ -79,6 +93,21 @@ def main(only: list[str] | None = None) -> None:
                 b = call("POST", "/api/patients/PTV-0159/actions", {"kind": "check", "outcome": "Fingerstick normal, probably the sensor", "alert": "low"})
                 c = call("POST", "/api/patients/PTV-0151/actions", {"kind": "call", "outcome": "Spoke to the patient, no symptoms", "alert": "cardio"})
                 undo = [f"/api/patients/PTV-0001/ack/{a['id']}", f"/api/patients/PTV-0159/actions/{b['id']}", f"/api/patients/PTV-0151/actions/{c['id']}"]
+            if click == "walkloop":
+                # Ramesh replies on his phone at 19:45 that he will walk after dinner; then the replay moves on to 22:30.
+                set_clock("2026-03-15T19:45:00+05:30")
+                fc = call("GET", "/api/patients/PTV-0001/forecast")
+                lv = call("GET", "/api/patients/PTV-0001/levers")
+                walk = next(x for x in lv["levers"] if x["request"] == {"walk_minutes": 15})
+                peak = round(fc["status"]["peak"])
+                nudge = call("POST", "/api/patients/PTV-0001/messages", {"key": "nudge", "params": {"peak": peak, "after": round(peak + walk["peak"]), "lever": "walk15"}})
+                act = call("POST", "/api/patients/PTV-0001/activities", {"kind": "walk", "minutes": 15, "when": "after_next_meal"}, PATIENT)
+                msg = call("POST", "/api/patients/PTV-0001/messages", {"key": "will_walk"}, PATIENT)
+                undo = [(f"/api/patients/PTV-0001/activities/{act['id']}", PATIENT), (f"/api/patients/PTV-0001/messages/{msg['id']}", PATIENT),
+                        f"/api/patients/PTV-0001/messages/{nudge['id']}"]
+                set_clock(at)
+                if name.startswith("25"):
+                    page.add_init_script("localStorage.setItem('prativimb-share-lang', 'hi');")
             page.goto(WEB + path, wait_until="load")
             page.wait_for_selector(sel, timeout=90000)
             page.wait_for_function("!document.body.innerText.includes('Replaying the last 6 hours')", timeout=60000)
@@ -87,7 +116,25 @@ def main(only: list[str] | None = None) -> None:
             if click and click.startswith("lang:"):
                 page.select_option(".share-tools select", click[5:])
                 page.wait_for_timeout(800)
-            elif click and click not in ("phone", "seed", "signedout"):
+            elif click and click.startswith("steps:"):
+                for step in click[6:].split("|"):
+                    kind, _, arg = step.partition("=")
+                    if kind == "click":
+                        page.get_by_text(arg, exact=True).first.click()
+                    elif kind == "sel":
+                        page.locator(arg).first.click()
+                    elif kind == "fill":
+                        sel_, _, val = arg.partition(":")
+                        page.fill(sel_, val)
+                    elif kind == "keys":
+                        sel_, key, n = arg.rsplit(":", 2)
+                        page.focus(sel_)
+                        for _ in range(int(n)):
+                            page.keyboard.press(key)
+                    elif kind == "wait":
+                        page.wait_for_timeout(int(arg))
+                page.wait_for_load_state("networkidle")
+            elif click and click not in ("phone", "seed", "signedout", "walkloop"):
                 page.get_by_text(click, exact=True).click()
                 page.wait_for_timeout(4000)
                 page.wait_for_load_state("networkidle")
@@ -100,7 +147,10 @@ def main(only: list[str] | None = None) -> None:
                 page.evaluate("window.scrollTo(0, 0)")
             page.screenshot(path=str(OUT / f"{name}.png"), full_page=not viewport_only)
             for u in undo:
-                call("DELETE", u)
+                if isinstance(u, tuple):
+                    call("DELETE", u[0], who=u[1])
+                else:
+                    call("DELETE", u)
             print("saved", name)
             ctx.close()
         browser.close()

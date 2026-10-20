@@ -73,6 +73,12 @@ Hero patients are also exported in device formats and read back through the adap
 * Android Health Connect: the same streams as Health Connect records (`BloodGlucoseRecord`, `HeartRateRecord` with samples, `StepsRecord`, `SleepSessionRecord` with stages, `HeartRateVariabilityRmssdRecord`), with `write_health_connect` and `read_health_connect` round trip tested; ingest reads a `health_connect.json` when a patient folder has one.
 * Apple Health and Google Fit have no native nightly RMSSD type (Apple exports SDNN); Health Connect does. Nightly RMSSD, as rings and bands such as Oura or Fitbit report it, is written under our own namespaced type (`org.prativimb.NightlyRMSSD`, `com.prativimb.hrv.rmssd.nightly`).
 
+## The reference simulator after generation
+
+The generator's physiology loop (`physiology.run`) can restart from a saved state, so the data generator doubles as a reference for what if questions (`prativimb/data/reference.py`). Every patient is rebuilt from the same seeds; the state at every midnight is saved once (`make train` writes `artifacts/reference_states.npz`, about 30 seconds), and any what if replays at most one day before applying the change. Changes are applied to what the patient really did: walks add 100 steps a minute starting 10 minutes after the meal, swaps change carbohydrate and absorption speed with the same factors the twin uses, and a time shift moves the real meal.
+
+In the demo, a walk the patient logs from their phone changes the replayed data after it: the replayed CGM becomes the reference glucose with the walk plus the sensor noise the original reading had, and steps and heart rate show the walk. Removing the walk restores the original data. This is a demo device, labelled on screen, so the loop from message to outcome can be seen; it never changes the files on disk.
+
 ## Cardiovascular events
 
 A latent daily strain process (AR(1) noise) drives resting heart rate up and HRV, deep sleep, REM and steps down. Each patient's chance of an event in the window comes from a Framingham shaped synthetic risk (age, sex, systolic pressure, smoking, diabetes, TC/HDL, family history, 9p21 genotype). Before an event, strain ramps up over seven days; after it there is a hospital gap of about a day and a recovery tail. About 28% of patients have an illness episode (fever) that looks similar but is not followed by an event, so the classifier has confounders to learn around. 25 patients have an event.

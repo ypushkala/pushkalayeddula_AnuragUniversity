@@ -9,6 +9,10 @@
   patient with a fingerstick), with an outcome note.
 * Plans: a change a doctor agreed with the patient (for example a walk after every main meal),
   checked against what actually happened a week later.
+* Activities: a walk the patient says they did or will do. A planned walk enters the forecast; in this
+  demo a walk also changes the replayed readings, using the reference simulator (see services.sync).
+* Messages: what the patient replied to a care team message on their phone.
+* Refits: a twin refitted on a recent week after its fit drifted.
 * Consent: per data source (CGM, wearable, ABDM health records), granted or withdrawn. While
   withdrawn, the service stops using that source.
 
@@ -26,7 +30,7 @@ from prativimb import config
 
 STORE = config.ARTIFACT_DIR / "clinical_store.json"
 AUDIT = config.ARTIFACT_DIR / "audit.jsonl"
-KEYS = ("meals", "acks", "actions", "plans", "consents")
+KEYS = ("meals", "acks", "actions", "plans", "consents", "activities", "messages", "refits")
 CONSENT_SOURCES = ("cgm", "wearable", "abdm")
 
 
@@ -137,12 +141,58 @@ class ClinicalStore:
         c = self.consent(pid, source, now)
         return c if c and not c["granted"] else None
 
+    # activities and messages ---------------------------------------------------------------
+    def add_activity(self, pid: str, kind: str, start: int, minutes: int, by: str, now: int, source: str,
+                     planned_start: int | None = None) -> dict:
+        rec = {"id": self._id(), "pid": pid, "kind": kind, "start": int(start), "minutes": int(minutes), "by": by,
+               "planned_start": int(start if planned_start is None else planned_start),
+               "entered_minute": int(now), "minute": int(now), "source": source}
+        with self.lock:
+            self.activities.append(rec)
+            self._save("activity_added", rec)
+        return rec
+
+    def remove_activity(self, pid: str, aid: str, by: str, now: int) -> bool:
+        return self._remove("activities", pid, aid, "activity_removed", by, now)
+
+    def activities_for(self, pid: str, now: float) -> list[dict]:
+        return sorted((a for a in self.activities if a["pid"] == pid and a["entered_minute"] <= now), key=lambda a: a["start"])
+
+    def add_message(self, pid: str, sender: str, key: str, text: str, now: int, by: str, params: dict | None = None) -> dict:
+        rec = {"id": self._id(), "pid": pid, "from": sender, "key": key, "text": text, "minute": int(now), "by": by,
+               "params": params or {}}
+        with self.lock:
+            self.messages.append(rec)
+            self._save("message", rec)
+        return rec
+
+    def remove_message(self, pid: str, mid: str, by: str, now: int) -> bool:
+        return self._remove("messages", pid, mid, "message_removed", by, now)
+
+    def messages_for(self, pid: str, now: float) -> list[dict]:
+        return [m for m in self.messages if m["pid"] == pid and m["minute"] <= now]
+
+    # refits ------------------------------------------------------------------------------
+    def add_refit(self, pid: str, theta: list[float], by: str, now: int, report: dict) -> dict:
+        rec = {"id": self._id(), "pid": pid, "theta": [float(x) for x in theta], "by": by, "minute": int(now), **report}
+        with self.lock:
+            self.refits.append(rec)
+            self._save("twin_refitted", rec)
+        return rec
+
+    def remove_refit(self, pid: str, rid: str, by: str, now: int) -> bool:
+        return self._remove("refits", pid, rid, "twin_refit_undone", by, now)
+
+    def refit(self, pid: str, now: float) -> dict | None:
+        rows = [r for r in self.refits if r["pid"] == pid and r["minute"] <= now]
+        return max(rows, key=lambda r: r["minute"]) if rows else None
+
     # reading back ------------------------------------------------------------------------
     def between(self, start: float, end: float, pid: str | None = None) -> dict[str, list[dict]]:
         """Everything entered in (start, end], by kind, for handover and follow up."""
         out = {}
         for k in KEYS:
-            t = "entered_minute" if k == "meals" else "minute"
+            t = "entered_minute" if k in ("meals", "activities") else "minute"
             out[k] = sorted((r for r in getattr(self, k) if start < r[t] <= end and (pid is None or r["pid"] == pid)),
                             key=lambda r: r[t])
         return out

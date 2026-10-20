@@ -199,6 +199,7 @@ def spec(m: dict, cs: dict) -> list[Slide]:
     cr = c["components"]["risk"]
     op = c["operating_point"]
     fu = json.loads((config.REPORT_DIR / "followup.json").read_text())
+    cf = json.loads((config.REPORT_DIR / "counterfactual.json").read_text())
     half = next(x for x in fu["cardio_stress"]["results"] if x["strength"] == 0.5)
     quarter = next(x for x in fu["cardio_stress"]["results"] if x["strength"] == 0.25)
     load = fu["alert_load"]
@@ -230,17 +231,19 @@ def spec(m: dict, cs: dict) -> list[Slide]:
              f"A 15 minute walk after dinner takes {-cs['walk']['delta']['peak']:.0f} mg/dL off the twin's 6 hour peak. "
              f"Millets instead of white rice take {-cs['millet']['delta']['peak']:.0f}.\n"
              f"Together: peak {-cs['both']['delta']['peak']:.0f} mg/dL lower and {-cs['both']['delta']['tar_min']:.0f} minutes less above 180.\n"
-             + early_text(cs["early"]), 13, INK, bullets=True),
+             + early_text(cs["early"]) + "\n"
+             f"Checked against the reference simulator the twin never sees: across {cf['cases']} moments in {cf['patients']} test patients "
+             f"the twin gets the direction of a change right {cf['overall']['direction_agree'] * 100:.0f}% of the time.", 12, INK, bullets=True),
     ]))
 
     S.append(Slide("Clinical workflow", "Use", [
         Img(str(SHOTS / "01_ward.png"), 0.6, 1.45, 6.0, 3.84, border=True),
-        Img(str(SHOTS / "15_earlier_alerts.png"), 6.85, 1.45, 5.9, 4.04, border=True),
+        Img(str(SHOTS / "25_phone_loop.png"), 6.85, 1.45, 5.9, 4.04, border=True),
         Text(0.6, 5.55, 6.0, "1. Ward grouped by urgency, with why each alert fired; n opens the next unseen alert. "
              f"Load measured: {load['high_per_patient_day']:.1f} confident high alerts per patient per day, {load['high_came_true'] * 100:.0f}% came true. "
              "2. The first action fits the alert: check now, call, book a review, try a change. Undo for 10 seconds.", 11.5, INK2),
-        Text(6.85, 5.7, 5.9, "3. Every alert's outcome and what the team did; a week plan checked against what happened. "
-             "4. Shift handover, daily digest, SOAP note, patient view in English, Hindi or Tamil.", 11.5, INK2),
+        Text(6.85, 5.7, 5.9, "3. A suggestion to the patient's phone in Hindi, Tamil or English; the reply enters the forecast and the outcome "
+             "comes back to both sides. 4. Every alert's outcome, week plans checked a week later, handover, festival planner.", 11.5, INK2),
     ]))
 
     S.append(Slide("Privacy, safety and limits", "Governance", [

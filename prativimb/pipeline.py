@@ -11,8 +11,9 @@ def main(argv: list[str]) -> None:
     steps = {
         "data": ["data"], "twin": ["twin"], "glucose": ["glucose"], "hypo": ["hypo"], "cardio": ["cardio"],
         "report": ["report", "followup"], "followup": ["followup"],
-        "train": ["twin", "glucose", "hypo", "cardio", "report", "followup"],
-        "all": ["data", "twin", "glucose", "hypo", "cardio", "report", "followup"],
+        "reference": ["reference"], "counterfactual": ["counterfactual"],
+        "train": ["twin", "glucose", "hypo", "cardio", "reference", "report", "followup", "counterfactual"],
+        "all": ["data", "twin", "glucose", "hypo", "cardio", "reference", "report", "followup", "counterfactual"],
     }[stage]
     for s in steps:
         print(f"== {s}")
@@ -34,6 +35,12 @@ def main(argv: list[str]) -> None:
         elif s == "report":
             from prativimb.eval import report
             report.run()
+        elif s == "reference":
+            from prativimb.data import reference
+            reference.build_checkpoints()
+        elif s == "counterfactual":
+            from prativimb.eval import counterfactual
+            counterfactual.run(verbose=False)
         elif s == "followup":
             from prativimb.eval import followup
             followup.run(verbose=False)

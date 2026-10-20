@@ -139,3 +139,20 @@ class Plan(BaseModel):
 class Consent(BaseModel):
     source: Literal["cgm", "wearable", "abdm"]
     granted: bool
+
+
+class Activity(BaseModel):
+    kind: Literal["walk"] = "walk"
+    minutes: int = Field(15, ge=5, le=90)
+    when: Literal["after_next_meal", "now", "done"] = "after_next_meal"
+    minutes_ago: int = Field(0, ge=0, le=240)
+
+
+class Message(BaseModel):
+    key: Literal["will_walk", "walked", "not_today", "nudge"]
+    text: str = Field("", max_length=280)
+    params: dict = {}
+
+
+class Ask(BaseModel):
+    text: str = Field(..., min_length=1, max_length=400)

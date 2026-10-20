@@ -128,3 +128,15 @@ Produces `data/raw/` (FHIR style EHR bundles, device style exports for hero pati
 - [x] Roles (doctor, nurse or health educator, patient) checked by the API; synthetic ABHA; simulated ABDM consent; Health Connect adapter.
 - [x] 43 tests pass; accessibility audit clean on 11 screens in both themes; tests use a temporary store.
 
+## Version 1.5: what makes it stand out
+
+- [x] Reference simulator restartable from saved state; rebuilt patients match the generated data exactly; midnight checkpoints for all patients.
+- [x] What ifs checked against the reference: per change on Try a change, and across 316 moments in 40 test patients (`reports/counterfactual.md`, model page, model card).
+- [x] What would sharpen the forecast: the meal's usual spread re-run through the twin, plus fingerstick, watch and sensor gaps.
+- [x] See inside the twin: animated stomach, gut, blood, insulin action and walking, usual against the change.
+- [x] Ask in plain words: offline phrase matcher, optional language model behind an API key, settings shown for checking.
+- [x] The loop with the patient: nudge from the banner, the patient's phone in Hindi, Tamil or English, replies, a planned walk entering the forecast, the replay following the reference, the result to both sides.
+- [x] Festival planner (Ugadi and Gudi Padwa, Chaitra Navratri, Eid al-Fitr), ward level what if, twin health with refit, Listen buttons.
+- [x] Fixed: glucose already above 180 now has its own card instead of No alerts.
+- [x] 49 tests pass; accessibility audit clean on 13 screens and the interactive panels in both themes.
+

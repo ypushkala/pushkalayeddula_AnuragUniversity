@@ -99,9 +99,15 @@ Click **Try a change** in the banner.
 
 "The page opens on the changes that would help Ramesh most tonight, as cards: half the portion, walk and millets, millets, a 30 minute walk. The top one is already showing: his peak falls from 318 to 243." Click the other cards in turn. Switch to **Next 24 hours, every meal**: "Over a whole day, a smaller portion and a 30 minute walk after every main meal matter most for him. Beyond six hours the absolute level drifts, so we read the difference between the curves."
 
-"These curves come from the mechanistic twin, solved with scipy's adaptive solver. They are a conversation aid, not a prescription."
+"These curves come from the mechanistic twin, solved with scipy's adaptive solver. They are a conversation aid, not a prescription. But are they right?" Click **Walk 15 min and millets**, then **Check against the reference simulator**: "Our synthetic patients come from a richer simulator the twin never sees, and it is deterministic, so we can re-run Ramesh's evening with the change. The twin said 57 lower; the reference says 61. Across 316 moments in 40 test patients the twin gets the direction right three times in four. And it shows us its weak spot: it misses that an earlier dinner usually makes things worse. No real clinic can check a what if like this; synthetic data can."
+
+Open **See inside the twin** and press **Play**: "This is the twin's own insides: dinner in the stomach, then the gut, glucose entering the blood, insulin action and the walk pulling glucose into muscle. On the right, millets empty more slowly and the walk lights up." Type into the box above the cards: "what if he skips rice and walks after dinner for the next week?" and press **Ask**: "The question becomes the simulator's settings, shown so I can check them. The numbers still come from the twin."
 
 Click **Next 7 days** (a few seconds). "Over a week, a 30 minute walk after every main meal adds about 21 points of time in range. A week ahead the level drifts, so the chart shows only the change against his usual plan." Scroll up to **Plans agreed with Ramesh**: "On 6 March his doctor agreed a 15 minute walk after every main meal. The one week check compares before and after with what the forecast expected, and it checks from his steps whether he actually walked: after 3 of 20 meals. So the plan was not tested, and the dashboard says ask what got in the way, instead of claiming it failed or worked."
+
+Back on **Today**, point to **What would sharpen this forecast**: "When the range is wide, it says what would narrow it: logging tonight's dinner would bring the 21:45 range from 204 to 334 down to about 231 to 324."
+
+Click **Message Ramesh a walk suggestion** in the banner, then **Ramesh's phone (demo)**: the message arrives in Hindi; press **सुनें** to hear it. Press **हाँ, खाने के बाद टहलेंगे**. "The care team sees the reply at once, and the forecast now expects about 256." Demo replay strip, **22:30**: "Because the walk happened, the replay now follows the reference simulator: tonight he reached 283; the same evening without the walk would have reached about 297. Ramesh gets that message too." Return with the strip to **19:45** and remove the reply with Undo, or leave it for the handover.
 
 Click **Share with Ramesh** in the banner, choose हिन्दी: "And this is what Ramesh takes home: large type, in Hindi or Tamil, the changes that help him most, shareable on WhatsApp or printed. From the same page he can log a meal himself, and choose what he shares: glucose, wearable data and health records through ABDM, each with a button to stop sharing. The translations are drafts for review by a native speaking clinician."
 
@@ -127,7 +133,7 @@ Optional, in the nurse window: open Manoj Naidu, click **Mark as seen**. "A nurs
 
 Open Ramesh, click **Clinical note** next to his name; it opens as a printable sheet.
 
-"One click turns the twin's findings into a SOAP note for the record: what the patient reported, CGM and wearable summaries, the alerts with their reasons, and the simulated options." Click **Download PDF** and show the one page PDF. Then click **Handover** in the top bar: "At the end of a shift: what is still open, what was seen, and what was done and by whom, ready to print or paste."
+"One click turns the twin's findings into a SOAP note for the record: what the patient reported, CGM and wearable summaries, the alerts with their reasons, and the simulated options." Click **Download PDF** and show the one page PDF. Click **Festivals** in the top bar: "Each patient's twin replays Ugadi, the first Navratri fast and Eid against a usual day. Gopal Mehta would spend almost two more hours above 180 on Ugadi; we would call him first." On the ward, open **If tonight's 6 likely high patients made one change** and click **Walk 15 min after the meal**: "Added up from each patient's own twin." Then click **Handover** in the top bar: "At the end of a shift: what is still open, what was seen, and what was done and by whom, ready to print or paste."
 
 ## 15:30 Metrics and model card
 

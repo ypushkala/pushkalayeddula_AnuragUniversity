@@ -119,6 +119,23 @@ At the operating threshold (6.9% risk): specificity 94.4%, 5 of 6 events flagged
 
 There is no validation on real cardiac outcomes; open datasets pairing continuous wearable data with adjudicated events need a data use agreement, which this project does not use.
 
+### What if answers, checked against the reference simulator
+
+The synthetic patients come from a richer, deterministic simulator (UVA/Padova based, `prativimb/data/physiology.py`) that the twin never sees. Any patient can be rebuilt exactly (largest difference 0.00003 mg/dL) and re-run from any minute with one change applied to what they actually ate. 316 moments, 40 minutes before a real main meal, in 40 test patients; 8 changes; 6 hour window; the twin sees only data up to that moment and the declared routine.
+
+| Change | Twin, average change in peak | Reference | Direction agrees | Typical error |
+|---|---:|---:|---:|---:|
+| Walk 15 min after the meal | -6 | -9 | 71% | 6 |
+| Walk 30 min after the meal | -13 | -17 | 83% | 11 |
+| Millets instead of white rice | -20 | -22 | 83% | 11 |
+| Roti instead of rice | -9 | -10 | 85% | 4 |
+| Brown rice instead of white rice | -10 | -11 | 84% | 5 |
+| Half the portion | -31 | -36 | 91% | 11 |
+| Meal 1 h earlier | +0 | +10 | 31% | 13 |
+| Walk 15 min and millets | -23 | -26 | 83% | 14 |
+
+mg/dL. Overall direction agreement 76%, correlation 0.73; the reference's best change is the twin's first choice 69% of the time and in its top two 85%. Known weaknesses: walks slightly underestimated; an earlier meal on top of an unsettled previous meal is not penalised enough. Not checked: sleep, missed doses, night shifts and insulin, which act through day level factors in the reference. This tests structure against a second model of the same physiology; it is necessary, not sufficient.
+
 ### Alert load
 
 Per patient per day on test patients: 1.33 confident high glucose alerts (94% came true within 2 h 15 min, counting rises that continue an earlier high), 1.89 possible highs (shown on the patient page only), 1.06 low glucose alerts; 0.15 new heart risk flags per patient per week. A 200 patient ward would hold a median of 25 patients on the Needs attention list (90th percentile 41). Details: `reports/followup.md`.
@@ -139,6 +156,9 @@ Before day 7 the forecast uses parameters estimated from the health record (medi
 
 * Synthetic ground truth is still a model; these numbers show the method works end to end, not clinical performance.
 * Only 6 cardiovascular events among test patients; intervals are wide and the supervised model has learned our simulated prodrome (see the stress test).
+* What if answers agree with the reference simulator in direction 76% of the time; an earlier meal is the weak spot (31%).
+* The forecast sharpening estimate assumes the meal's spread and the rest of the uncertainty are independent; it is an estimate, labelled as one.
+* Twin health uses a threshold set on this synthetic cohort (errors 30% worse than the first week of use, or a 10 mg/dL bias); real patients will drift more and the threshold needs local tuning.
 * On real traces, models trained only on synthetic data perform at about persistence level; local retraining and per site conformal recalibration are prerequisites for deployment. Twin forecasts start from the observer estimate rather than the last reading, which costs accuracy at 30 minutes.
 * Low glucose forecasting has a short median lead and modest sensitivity; most lows here are brief level 1 dips in people without diabetes.
 * Conformal guarantees assume exchangeability; within patient correlation makes coverage approximate, and it is lower below 70 mg/dL.

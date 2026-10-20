@@ -155,10 +155,66 @@ class AppState:
 
     # basics --------------------------------------------------------------------------
     def theta(self, pid: str, minute: float | None = None) -> np.ndarray:
-        """Calibrated parameters, or the EHR prior during the first week (a new patient's twin has no fit yet)."""
+        """Calibrated parameters, the EHR prior during the first week, or a later refit once one has been made."""
         if minute is not None and self.calibrating(minute):
             return self.twins.loc[pid, [f"prior_{p}" for p in PARAMS]].to_numpy(float)
+        if minute is not None:
+            r = self.store.refit(pid, minute)
+            if r:
+                return np.array(r["theta"], float)
         return self.twins.loc[pid, PARAMS].to_numpy(float)
+
+    # walks the patient logged: the replay follows the reference simulator ------------
+    def sync(self, minute: float) -> None:
+        """Apply patient logged walks to the replayed data, as of the clock. Called before every request.
+
+        The demo replays recorded synthetic data, so a walk a patient logs would otherwise change nothing that
+        follows. Here the reference simulator re-runs that patient from the start of the walk with it included,
+        and the replayed CGM after that point becomes the reference glucose plus the sensor noise the original
+        reading had. Heart rate and steps show the walk too. Removing the walk restores the original data.
+        """
+        acts = [a for a in self.store.activities if a["entered_minute"] <= minute and a["kind"] == "walk"]
+        key = tuple(sorted(a["id"] for a in acts)) + tuple(sorted(r["id"] for r in self.store.refits if r["minute"] <= minute))
+        if key == getattr(self, "_sync_key", ()):
+            return
+        with self.lock:
+            orig = self.__dict__.setdefault("_S_orig", {})
+            for pid, sr in orig.items():
+                self.S[pid] = sr
+            orig.clear()
+            for pid in sorted({a["pid"] for a in acts}):
+                orig[pid] = self.S[pid]
+                try:
+                    self.S[pid] = self._walked(pid, [a for a in acts if a["pid"] == pid])
+                except Exception as exc:  # the replay must never break because of a demo effect
+                    print("walk not applied:", exc)
+            self._sync_key = key
+            self._pp.clear()
+            self._ward_cache = None
+            self._hist_key = None
+
+    def _walked(self, pid: str, walks: list[dict]):
+        from prativimb.data import reference
+        s = self.S[pid]
+        t_s = min(a["start"] for a in walks)
+        end = config.N_DAYS * 1440
+        if t_s >= end:
+            return s
+        base, _ = reference.changed_inputs(pid, t_s, end - t_s, reference.Change())
+        alt = {k: (v.copy() if k in reference.INPUTS else v) for k, v in base.items()}
+        for a in walks:
+            r0 = a["start"] - t_s
+            alt["steps"][0, r0: r0 + a["minutes"]] = np.maximum(alt["steps"][0, r0: r0 + a["minutes"]], reference.WALK_STEPS)
+        delta = reference.run_from(pid, t_s, alt) - reference.run_from(pid, t_s, base)
+        k0 = -(-t_s // STEP)
+        idx = np.arange(k0, min(len(s.cgm), end // STEP))
+        cgm, steps, hr = s.cgm.copy(), s.steps.copy(), s.hr.copy()
+        cgm[idx] = cgm[idx] + delta[idx * STEP - t_s]
+        for a in walks:
+            w = np.arange(a["start"] // STEP, min(len(steps), (a["start"] + a["minutes"]) // STEP))
+            steps[w] = np.maximum(steps[w], reference.WALK_STEPS)
+            hr[w] = np.where(np.isnan(hr[w]), hr[w], hr[w] + 22)
+        return replace(s, cgm=cgm, steps=steps, hr=hr)
 
     @staticmethod
     def calibrating(minute: float) -> int | None:
@@ -169,7 +225,8 @@ class AppState:
     def pp(self, pid: str, minute: float | None = None) -> forecast.Prepared:
         """Prepared inputs, including meals entered by a clinician or patient up to the clock time."""
         entries = self.store.meals_for(pid, minute) if minute is not None else []
-        key = (pid, tuple(e["id"] for e in entries))
+        walks = [a for a in self.store.activities_for(pid, minute) if a["kind"] == "walk"] if minute is not None else []
+        key = (pid, tuple(e["id"] for e in entries), tuple(a["id"] for a in walks))
         if key not in self._pp:
             s = self.S[pid]
             logged = [e for e in entries if e["type"] == "logged"]
@@ -186,6 +243,8 @@ class AppState:
             pp = forecast.prepare(s)
             pp.extra["planned"] = [(e["minute"], e["carbs"], MEAL_TYPES.get(e["kind"], ("", 1.0))[1], e["label"])
                                    for e in entries if e["type"] == "planned"]
+            # A walk the patient said they will take enters the forecast at the time the twin expects it.
+            pp.extra["walks"] = [(a.get("planned_start", a["start"]), a["minutes"]) for a in walks]
             self._pp[key] = pp
         return self._pp[key]
 
@@ -284,6 +343,8 @@ class AppState:
             out["cross_minute"] = (r.k + int(above[0])) * STEP
         elif cg > config.SPIKE_THRESHOLD:
             out["tier"] = "high"
+        out["in_2h"] = float(mid[-1])
+        out["origin_minute"] = r.k * STEP
         cal = self.calibrating(r.k * STEP)
         if cal:
             out["calibrating"] = cal
@@ -314,6 +375,7 @@ class AppState:
                 return self._ward_cache[1]
         pids = list(self.patients.index)
         rows = self.forecast_rows(pids, minute)
+        health = self.health_all(minute) if not self.calibrating(minute) else {}
         out = []
         for pid in pids:
             p = self.patients.loc[pid]
@@ -368,6 +430,7 @@ class AppState:
                 "trend30": st and st["trend30"], "sparkline": [None if np.isnan(v) else float(v) for v in spark],
                 "event_a": st, "event_b": cv, "last_sync": last_sync and iso(last_sync), "priority": pr,
                 "group": group, "seen": seen, "sharing_paused": paused, "calibrating": self.calibrating(minute),
+                "twin_fit": health.get(pid),
                 "hero": pid in config.HERO_IDS.values(), "split": self.split[pid],
             }))
         rank = {g: i for i, g in enumerate(GROUPS)}
@@ -635,6 +698,14 @@ class AppState:
                 "detail": f"Glucose forecast peak {st['peak']:.0f} mg/dL around {hhmm(st['peak_minute'])}; "
                           f"crossing 180 near {hhmm(st['cross_minute'])}."
                           + (f" At least a {(1 + self.alert_cov) / 2:.0%} chance of exceeding 180." if st["tier"] == "alert" else ""),
+                "reason": sent,
+            })
+        if st["tier"] == "high":
+            h2 = st.get("in_2h")
+            cards.append({
+                "kind": "high_now", "tier": "watch", "title": "Glucose above 180 now",
+                "detail": f"Reading {st['glucose']:.0f} mg/dL"
+                          + (f"; the forecast expects about {h2:.0f} by {hhmm(st['origin_minute'] + 120)}." if h2 else "."),
                 "reason": sent,
             })
         if st["low"] in ("now", "forecast"):
@@ -1109,3 +1180,303 @@ class AppState:
         })
         self._digest_key, self._digest = key, res
         return res
+
+    # check against the reference simulator ------------------------------------------
+    def reference_check(self, pid: str, minute: float, req: dict) -> dict:
+        """The twin's answer to a what if next to the reference simulator's, for the same moment and change."""
+        from prativimb.data import reference
+        others = {k: v for k, v in req.items() if k not in ("walk_minutes", "swap", "shift_hours", "scope", "horizon_h") and v}
+        if others:
+            return {"available": False, "reason": "The reference check covers walks, food swaps, portion size and meal "
+                    "timing. Sleep, missed doses, night shifts and insulin act through the whole day in the reference "
+                    "simulator, so they cannot be checked for one evening."}
+        k = self.origin(pid, minute)
+        if k is None:
+            return {"available": False, "reason": "No recent glucose reading."}
+        t = k * STEP
+        window = min(360, config.N_DAYS * 1440 - t - 1)
+        if window < 90:
+            return {"available": False, "reason": "Too little of the recorded day is left to check."}
+        ch = reference.Change(walk_minutes=int(req.get("walk_minutes", 0)), swap=req.get("swap", "none"),
+                              shift_hours=float(req.get("shift_hours", 0.0)))
+        ref = reference.what_if(pid, t, window, ch)
+        tw = self.whatif(pid, minute, {**{k2: req[k2] for k2 in ("walk_minutes", "swap", "shift_hours") if k2 in req}, "horizon_h": 6})
+        n = window // STEP + 1
+        gb, ga = np.asarray(tw["baseline"][:n])[1:], np.asarray(tw["scenario"][:n])[1:]
+        twin = {"peak": float(ga.max() - gb.max()), "tar_min": int(((ga > 180).sum() - (gb > 180).sum()) * STEP)}
+        d_ref, d_tw = ref["delta"]["peak"], twin["peak"]
+        same_dir = (abs(d_ref) < 2 and abs(d_tw) < 2) or (d_ref * d_tw > 0 and abs(d_ref) >= 2 and abs(d_tw) >= 2)
+        s_ = self.S[pid]
+        assumed = tw.get("target_meal")
+        actual = ref.get("meal")
+        return clean({
+            "available": True, "window_min": window, "origin": iso(t),
+            "times": [iso(t + 5 * j) for j in range(len(ref["baseline"]))],
+            "reference": {"baseline": ref["baseline"], "scenario": ref["scenario"], "delta": ref["delta"],
+                          "baseline_summary": ref["baseline_summary"], "scenario_summary": ref["scenario_summary"]},
+            "twin": twin, "twin_baseline": list(gb[::1]), "agree": same_dir,
+            "assumed_meal": assumed, "actual_meal": {"time": hhmm(actual["minute"]), "carbs": actual["carbs"]} if actual else None,
+            "note": "The reference simulator is the richer model the synthetic patients come from. It knows what the patient "
+                    "really ate; the twin only knows the routine they declared. Synthetic data only.",
+        })
+
+    # what would sharpen the forecast --------------------------------------------------
+    def sharpen(self, pid: str, minute: float) -> dict:
+        """Which missing piece of information would narrow the forecast most, and roughly by how much."""
+        fc = self.patient_forecast(pid, minute, explain=False)
+        out = []
+        if not fc.get("available"):
+            return {"items": out}
+        st = fc["status"]
+        h = next(x for x in fc["horizons"] if x["h"] == 120)
+        k = self.origin(pid, minute)
+        pp, th = self.pp(pid, minute), self.theta(pid, minute)
+        planned = {round(m) for m, *_ in pp.extra.get("planned", [])}
+        meals = [m for m in forecast.expected_meals(pp, k, 24) if m[1] >= forecast.MAIN_MEAL_G
+                 and not any(abs((k + m[0]) * STEP - p) <= 120 for p in planned)]
+        if meals:
+            j, carbs, af, name = meals[0]
+            slot = ((k + j) * STEP) % 1440
+            log = pp.s.meal_log
+            past = log[(log.minute < k * STEP) & (log.minute >= k * STEP - 14 * 1440)]
+            tod = past.minute % 1440
+            near = past[(np.abs(tod - slot) <= 90) & (past.carbs >= 0.4 * carbs)]
+            if len(near) >= 4:
+                ratio = np.percentile(near.carbs / carbs, [10, 90])
+                dt = np.percentile((near.minute % 1440) - slot, [10, 90])
+            else:
+                ratio, dt = np.array([0.75, 1.25]), np.array([-30.0, 30.0])
+            sims = []
+            for sc in (forecast.Scenario(carb_factor=float(ratio[0])), forecast.Scenario(carb_factor=float(ratio[1])),
+                       forecast.Scenario(shift_hours=float(dt[0]) / 60), forecast.Scenario(shift_hours=float(dt[1]) / 60)):
+                g, _ = forecast.simulate_scenario(pp, th, k, 24, sc, method="rk4")
+                sims.append(float(np.asarray(g)[24]))
+            sd_meal = float(np.hypot((sims[1] - sims[0]) / 2.563, (sims[3] - sims[2]) / 2.563))
+            sd_tot = (h["hi"] - h["lo"]) / (2 * 1.645)
+            sd_new = float(np.sqrt(max(sd_tot ** 2 - sd_meal ** 2, (0.35 * sd_tot) ** 2)))
+            lo, hi = h["mid"] - 1.645 * sd_new, h["mid"] + 1.645 * sd_new
+            if (h["hi"] - h["lo"]) - (hi - lo) >= 8:
+                label = name.split(" (")[0].lower()
+                out.append({"kind": "meal", "action": "Log a meal", "gain": float((h["hi"] - h["lo"]) - (hi - lo)),
+                            "text": f"Logging {label} (usually about {hhmm((k + j) * STEP)}, about {carbs:.0f} g) would narrow the "
+                                    f"{hhmm(k * STEP + 120)} range from {h['lo']:.0f} to {h['hi']:.0f} to about {lo:.0f} to {hi:.0f}.",
+                            "detail": f"Over the last two weeks this meal ranged from {ratio[0] * 100:.0f}% to {ratio[1] * 100:.0f}% "
+                                      f"of its usual size and from {dt[0]:+.0f} to {dt[1]:+.0f} minutes from its usual time; "
+                                      f"that alone moves the forecast by about {1.645 * sd_meal:.0f} mg/dL either way."})
+        if st.get("low") == "artefact" or (self.S[pid].cgm[k] < config.LOW_THRESHOLD and self.suspect_compression(pid, k)):
+            out.append({"kind": "fingerstick", "action": "Check the patient now", "gain": 100.0,
+                        "text": "A fingerstick would settle whether this low is real.",
+                        "detail": "The reading fell more than 1 mg/dL a minute during sleep, the pattern pressure on the sensor gives."})
+        elif st.get("low") in ("now", "forecast"):
+            out.append({"kind": "fingerstick", "action": "Check the patient now", "gain": 90.0,
+                        "text": "A fingerstick now would confirm the low before treating it.",
+                        "detail": f"The low glucose model gives {st['low_p'] * 100:.0f}%; sensors read low more often than blood does."})
+        hr = self.S[pid].hr[max(0, k - 12): k + 1]
+        if len(hr) and np.isnan(hr).all():
+            out.append({"kind": "wearable", "action": "", "gain": 20.0,
+                        "text": "The watch has not synced for an hour; the forecast assumes no activity since.",
+                        "detail": "Ask the patient to open the app on their phone, or log a walk if they have been active."})
+        c = self.S[pid].cgm
+        last = np.flatnonzero(~np.isnan(c[: int(minute // STEP) + 1]))
+        if len(last) and int(minute // STEP) - last[-1] >= 3:
+            out.append({"kind": "cgm", "action": "", "gain": 50.0,
+                        "text": f"No glucose reading for {(int(minute // STEP) - last[-1]) * STEP} minutes.",
+                        "detail": "The sensor may be out of range of the phone, or warming up after a change."})
+        out.sort(key=lambda x: -x["gain"])
+        return clean({"items": out, "range": {"lo": h["lo"], "hi": h["hi"], "time": hhmm(k * STEP + 120)}})
+
+    # inside the twin -------------------------------------------------------------------
+    def inside(self, pid: str, minute: float, req: dict) -> dict:
+        k = self.origin(pid, minute)
+        if k is None:
+            return {"available": False}
+        pp, th = self.pp(pid, minute), self.theta(pid, minute)
+        H = 72
+        sc_req = {kk: v for kk, v in req.items() if kk in forecast.Scenario.__dataclass_fields__}
+        a = forecast.trajectory(pp, th, k, H, forecast.Scenario(scope=sc_req.get("scope", "next")))
+        b = forecast.trajectory(pp, th, k, H, forecast.Scenario(**sc_req))
+        keys = ("G", "stomach_g", "gut_g", "into_blood", "insulin", "action", "activity", "out_of_blood")
+        return clean({"available": True, "times": [iso((k + j) * STEP) for j in range(H)],
+                      "usual": {x: list(a[x]) for x in keys}, "change": {x: list(b[x]) for x in keys},
+                      "meal_step": a["info"].get("target_step"), "units": {"G": "mg/dL", "stomach_g": "g", "gut_g": "g",
+                      "into_blood": "mg/dL per min", "insulin": "uU/mL", "action": "per min", "activity": "walking pace",
+                      "out_of_blood": "mg/dL per min"}})
+
+    # ward level what if ----------------------------------------------------------------
+    def ward_whatif(self, minute: float, lever: str) -> dict:
+        req = dict(self.LEVERS)[lever]
+        rows = [r for r in self.ward(minute) if r["group"] == "high"]
+        out = []
+        for r in rows:
+            pid = r["id"]
+            k = self.origin(pid, minute)
+            if k is None:
+                continue
+            pp, th = self.pp(pid, minute), self.theta(pid, minute)
+            gb, _ = forecast.simulate_scenario(pp, th, k, 72, forecast.Scenario(), method="rk4")
+            ga, _ = forecast.simulate_scenario(pp, th, k, 72, forecast.Scenario(**req), method="rk4")
+            gb, ga = np.asarray(gb)[1:], np.asarray(ga)[1:]
+            out.append({"pid": pid, "name": r["name"], "peak_before": float(gb.max()), "peak_after": float(ga.max()),
+                        "hours_above_before": float((gb > 180).sum() * STEP / 60), "hours_above_after": float((ga > 180).sum() * STEP / 60)})
+        saved = sum(x["hours_above_before"] - x["hours_above_after"] for x in out)
+        return clean({"lever": lever, "patients": out, "hours_saved": saved,
+                      "mean_peak_drop": float(np.mean([x["peak_before"] - x["peak_after"] for x in out])) if out else 0.0,
+                      "levers": [l for l, _ in self.LEVERS]})
+
+    # twin health -----------------------------------------------------------------------
+    def twin_health(self, pid: str, minute: float) -> dict:
+        """Is the twin still fitting this patient? Recent 2 hour error against its own first weeks of use."""
+        key = (pid, int(minute // 60), self.store.version)
+        cache = self.__dict__.setdefault("_health_cache", {})
+        if key in cache:
+            return cache[key]
+        c = self.S[pid].cgm
+        def errors(a: float, b: float):
+            jobs = []
+            for m in np.arange(a, b, 60):
+                k = self.origin(pid, float(m))
+                if k is not None and k >= forecast.W and k + 24 < len(c) and not np.isnan(c[k + 24]):
+                    jobs.append((pid, k, float(m)))
+            rows = self._rows(jobs)
+            e = np.array([r.hyb[120] - c[r.k + 24] for r in rows])
+            return e
+        now = float(minute) - 120
+        ref_a, ref_b = config.CALIBRATION_DAYS * 1440, (config.CALIBRATION_DAYS + 7) * 1440
+        if now < ref_b + 3 * 1440:
+            res = {"status": "too early", "text": "The fit can be checked once the twin has been in use for about ten days."}
+        else:
+            e0, e1 = errors(ref_a, ref_b), errors(max(ref_b, now - 7 * 1440), now)
+            r0, r1 = float(np.sqrt(np.mean(e0 ** 2))), float(np.sqrt(np.mean(e1 ** 2)))
+            bias = float(np.mean(e1))
+            # About the worst few percent of this synthetic cohort; real patients drift more (new medicines, illness).
+            drifting = (r1 > 1.3 * r0 and r1 > 20) or abs(bias) > 10
+            res = {"status": "drifting" if drifting else "good", "rmse_then": r0, "rmse_now": r1, "bias_now": bias,
+                   "text": (f"Typical 2 hour error {r1:.0f} mg/dL over the last 7 days against {r0:.0f} in its first week of use"
+                            + (f"; it now reads {abs(bias):.0f} mg/dL {'high' if bias > 0 else 'low'} on average" if abs(bias) > 8 else "")
+                            + (". The twin no longer fits as well as it did: refit it on the last week." if drifting else ". Fitting as well as before."))}
+        r = self.store.refit(pid, minute)
+        res["refit"] = {"t": iso(r["minute"]), "by": r["by"], "rmse_before": r.get("rmse_before"), "rmse_after": r.get("rmse_after"),
+                        "id": r["id"]} if r else None
+        cache[key] = clean(res)
+        return cache[key]
+
+    def health_all(self, minute: float) -> dict[str, str]:
+        """Twin fit for every patient, worked out in the background once per replay day (it takes a minute or two)."""
+        import threading
+        day = int(minute // 1440)
+        hs = self.__dict__.setdefault("_health_all", {})
+        if day in hs:
+            return hs[day]
+        if not getattr(self, "_health_running", False):
+            self._health_running = True
+
+            def work():
+                try:
+                    hs[day] = {pid: self.twin_health(pid, day * 1440 + 12 * 60)["status"] for pid in self.patients.index}
+                finally:
+                    self._health_running = False
+                    self._ward_cache = None
+            threading.Thread(target=work, daemon=True).start()
+        return {}
+
+    def refit_twin(self, pid: str, minute: float, by: str) -> dict:
+        from prativimb.twin import calibrate as cal
+        d = int(minute // 1440)
+        start = max(0, d - 7)
+        s = self.S[pid]
+        current = self.theta(pid, minute)
+        prior = cal.Prior(current, cal.ehr_prior(s.ehr).sd * 0.7)
+        theta, rep_ = cal.calibrate(s, prior=prior, days=d - start, start_day=start)
+        return self.store.add_refit(pid, list(theta), by, int(minute), {"rmse_before": rep_["rmse_prior"],
+                                    "rmse_after": rep_["rmse_fit"], "days": [start, d]})
+
+    # festival planner --------------------------------------------------------------------
+    FESTIVALS = [
+        {"key": "ugadi", "name": "Ugadi and Gudi Padwa", "date": "2026-03-19", "who": "regional",
+         "about": "New year in the Deccan and Maharashtra: a festive lunch with holige or puran poli.",
+         "suggest": "A smaller helping of the sweet and a walk after the festive lunch."},
+        {"key": "navratri", "name": "Chaitra Navratri, first fast", "date": "2026-03-19", "who": "hindu_fasts",
+         "about": "Nine days from 19 March; many keep fasts with sabudana, potato and fruit.",
+         "suggest": "Fewer sabudana dishes, more curd and fruit with the fast meal, and no long gap before breaking the fast."},
+        {"key": "eid", "name": "Eid al-Fitr (expected, depends on the moon)", "date": "2026-03-21", "who": "ramadan",
+         "about": "The end of Ramadan: sheer khurma in the morning, biryani and sweets through the day.",
+         "suggest": "A small bowl of sheer khurma, biryani with raita at one meal only, a walk after lunch."},
+    ]
+    REGIONAL = {"Mumbai", "Pune", "Nagpur", "Nashik", "Bengaluru", "Mysuru", "Hyderabad", "Vijayawada", "Hubballi", "Visakhapatnam"}
+
+    def _festival_meals(self, pid: str, fest: dict, day_minute: int) -> list[tuple]:
+        AF = {k: v[1] for k, v in MEAL_TYPES.items()}
+        if fest["key"] == "eid":
+            day = [(8 * 60 + 30, 45, "sweets", "Sheer khurma"), (13 * 60 + 30, 110, "biryani", "Eid lunch"),
+                   (17 * 60, 40, "sweets", "Sweets with guests"), (21 * 60, 90, "biryani", "Eid dinner")]
+        elif fest["key"] == "navratri":
+            plan = self.S[pid].routine.get("hindu_fast") or []
+            day = [(m, g, kind, name) for m, g, kind, name in plan] or [(11 * 60, 70, "sabudana", "Fast meal"),
+                                                                        (19 * 60 + 30, 80, "sabudana", "Fast dinner")]
+        else:
+            day = [(13 * 60 + 30, 150, "sweets", "Festive lunch with holige or puran poli"), (17 * 60, 30, "sweets", "Sweets")]
+        return [(day_minute + m, float(g), AF.get(kind, 1.0), name) for m, g, kind, name in day]
+
+    def festivals(self, minute: float) -> dict:
+        key = (int(minute // 1440), self.store.version)
+        if getattr(self, "_fest_key", None) == key:
+            return self._fest
+        from datetime import date
+        out = []
+        for fest in self.FESTIVALS:
+            d = (date.fromisoformat(fest["date"]) - config.START.date()).days
+            day0 = d * 1440
+            if day0 + 1440 <= minute:
+                continue
+            pids = []
+            for pid in self.patients.index:
+                dec = self.S[pid].declared
+                if fest["who"] == "ramadan" and dec.get("observes_ramadan"):
+                    pids.append(pid)
+                elif fest["who"] == "hindu_fasts" and dec.get("observes_hindu_fasts"):
+                    pids.append(pid)
+                elif fest["who"] == "regional" and self.patients.loc[pid].city in self.REGIONAL and not dec.get("observes_ramadan"):
+                    pids.append(pid)
+            rows = self._festival_batch(pids, fest, minute, day0)
+            rows.sort(key=lambda r: -r["extra_hours_above"])
+            out.append({**fest, "day": d, "patients": len(pids),
+                        "most_affected": [r for r in rows if r["extra_hours_above"] >= 0.25][:10],
+                        "total_extra_hours": float(sum(max(r["extra_hours_above"], 0) for r in rows))})
+        self._fest_key, self._fest = key, clean({"festivals": out})
+        return self._fest
+
+    def _festival_batch(self, pids: list[str], fest: dict, minute: float, day0: int) -> list[dict]:
+        """Twin runs from now to the end of the festival day: usual plan against the festival plan, batched."""
+        rows, U, O, X0, TH, BW, MET, meta = [], [], [], [], [], [], [], []
+        H = None
+        for pid in pids:
+            k = self.origin(pid, minute)
+            if k is None or k < forecast.W:
+                continue
+            Hk = int((day0 + 1440 - k * STEP) // STEP)
+            H = Hk if H is None else min(H, Hk)
+            meta.append((pid, k))
+        if not meta:
+            return []
+        for pid, k in meta:
+            base_pp = self.pp(pid, minute)
+            fest_pp = forecast.Prepared(**{**base_pp.__dict__, "extra": {**base_pp.extra,
+                                           "planned": base_pp.extra.get("planned", []) + self._festival_meals(pid, fest, day0)}})
+            for pp in (base_pp, fest_pp):
+                u, obs, x0, _ = forecast.apply_scenario(pp, k, H, forecast.Scenario())
+                U.append(u); O.append(obs); X0.append(x0)
+                TH.append(self.theta(pid, minute)); BW.append(float(pp.s.bw)); MET.append(float(pp.s.on_metformin))
+        cat = lambda f: np.concatenate([getattr(u, f) for u in U])
+        u = bergman.Inputs(*(cat(f) for f in ("carbs", "af", "A", "dose", "smod", "dawn")))
+        obs = np.concatenate(O)
+        x0 = np.concatenate(X0, axis=1)
+        p = bergman.params_dict(np.array(TH), np.array(BW), np.array(MET))
+        G, _ = bergman.run_rk4(p, x0, u, obs=obs, obs_until=forecast.W)
+        G = G[:, forecast.W:]
+        names = {pid: f"{q.given} {q.family}" for pid, q in self.patients.iterrows()}
+        for i, (pid, k) in enumerate(meta):
+            j0 = int((day0 - k * STEP) // STEP)
+            gb, gf = G[2 * i, max(j0, 0): H], G[2 * i + 1, max(j0, 0): H]
+            rows.append({"pid": pid, "name": names[pid], "usual_peak": float(gb.max()), "festival_peak": float(gf.max()),
+                         "extra_hours_above": float(((gf > 180).sum() - (gb > 180).sum()) * STEP / 60)})
+        return rows

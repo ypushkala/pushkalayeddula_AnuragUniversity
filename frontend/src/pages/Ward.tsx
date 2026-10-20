@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, dayToDate, dayMonth, fmt, glu, gluUnit, hhmm, minuteToDate, T, type WardRow } from "../api";
+import { api, dayToDate, dayMonth, fmt, glu, gluAbs, gluUnit, hhmm, minuteToDate, T, type WardRow, type WardWhatIf } from "../api";
 import { Hint } from "../components/Hint";
 import { GROUP_NAMES, needsAttention, patientLink } from "../components/PatientList";
 import { SkeletonRows } from "../components/Skeleton";
@@ -100,6 +100,38 @@ function SinceLastLooked({ rows, now }: { rows: WardRow[]; now: string }) {
   );
 }
 
+/** If tonight's likely high patients all made one change: the ward's total, from each patient's own twin. */
+function WardWhatIfPanel({ count }: { count: number }) {
+  const [lever, setLever] = useState("Walk 15 min after the meal");
+  const [res, setRes] = useState<WardWhatIf | null>(null);
+  const [busy, setBusy] = useState(false);
+  const run = (l: string) => { setLever(l); setBusy(true); api.wardWhatIf(l).then(setRes).finally(() => setBusy(false)); };
+  const levers = res?.levers ?? ["Walk 15 min after the meal", "Walk 30 min after the meal", "Millets instead of white rice", "Half the portion",
+    "Walk 15 min and millets"];
+  return (
+    <details className="disclosure ward-whatif">
+      <summary><span className="d-title">If tonight's {count} likely high patients made one change</span>
+        <span className="d-hint">{res ? `${fmt(res.hours_saved, 1)} fewer hours above 180 in all` : "each patient's own forecast, added up"}</span></summary>
+      <div className="d-body">
+        <div className="ask-examples">{levers.filter(l => !l.includes("earlier") && !l.includes("Sleep")).map(l => (
+          <button key={l} className={`chip ${l === lever && res ? "on" : ""}`} aria-pressed={l === lever && Boolean(res)} onClick={() => run(l)}>{l}</button>
+        ))}</div>
+        {busy && <p className="empty">Running each patient's forecast.</p>}
+        {res && !busy && (
+          <>
+            <p className="lead">{lever}: about <b>{fmt(res.hours_saved, 1)} fewer hours above 180</b> across {res.patients.length} patients tonight,
+              peaks about {gluAbs(res.mean_peak_drop)} {gluUnit()} lower on average.</p>
+            <table className="log num"><tbody>{res.patients.map(p => (
+              <tr key={p.pid}><td>{p.name}</td><td>peak {glu(p.peak_before)} to {glu(p.peak_after)}</td>
+                <td>{fmt(p.hours_above_before * 60)} to {fmt(p.hours_above_after * 60)} min above 180</td></tr>
+            ))}</tbody></table>
+          </>
+        )}
+      </div>
+    </details>
+  );
+}
+
 export function Ward() {
   const { clock } = useLive();
   const { data, error } = useLiveData(() => api.ward(), []);
@@ -189,6 +221,7 @@ export function Ward() {
           </button>
         ))}
       </div>
+      {data && counts.attention > 0 && <WardWhatIfPanel count={p.filter(r => r.group === "high").length} />}
       <Hint id="ward">Grouped by urgency: lows first, then likely highs, then heart risk. The grey line under each alert says why. Press n to open the next alert nobody has seen.</Hint>
       <table className="ward">
         <thead>
@@ -212,7 +245,7 @@ export function Ward() {
                 onFocus={() => setCursor(i)} onKeyDown={e => e.key === "Enter" && nav(patientLink(r))}
                 aria-label={`${r.name}, open`}>
                 <td>
-                  <div className="name">{r.name}</div>
+                  <div className="name">{r.name}{r.twin_fit === "drifting" && <span className="tag" title="The twin's recent error is clearly worse than in its first week of use">Twin needs refit</span>}</div>
                   <div className="sub">{r.age} {r.sex}{r.problems.length ? `, ${r.problems.slice(0, 2).join(", ")}` : ""}</div>
                 </td>
                 <td className="r">

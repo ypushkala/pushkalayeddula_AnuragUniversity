@@ -102,6 +102,31 @@ def build_params(patients) -> dict[str, np.ndarray]:
     return P
 
 
+STATE_KEYS = ("qsto1", "qsto2", "qgut", "Gp", "Gt", "Ip", "Il", "X", "I1", "Id", "Y", "Ipo", "Gs", "E", "Z", "M",
+              "Dbar", "absf", "since_meal", "G_prev", "fast")
+
+
+def initial_state(P: dict) -> dict[str, np.ndarray]:
+    """Basal steady state at minute 0, one entry per row of P."""
+    n = len(P["Gb"])
+    return {"qsto1": np.zeros(n), "qsto2": np.zeros(n), "qgut": np.zeros(n), "Gp": P["Gpb"].copy(), "Gt": P["Gtb"].copy(),
+            "Ip": P["Ipb"].copy(), "Il": P["Ilb"].copy(), "X": np.zeros(n), "I1": P["Ib"].copy(), "Id": P["Ib"].copy(),
+            "Y": np.zeros(n), "Ipo": P["Sb"] / P["gamma"], "Gs": P["Gb"].copy(), "E": np.zeros(n), "Z": np.zeros(n),
+            "M": np.full(n, 1.2) * (P["met_eff"] > 0), "Dbar": np.zeros(n), "absf": np.ones(n),
+            "since_meal": np.full(n, 300.0), "G_prev": P["Gb"].copy(), "fast": np.ones(n)}
+
+
+def rows(P: dict, idx) -> dict:
+    """Parameters for a subset or repetition of patients (for batches of what if runs)."""
+    idx = np.asarray(idx)
+    return {k: v[idx] for k, v in P.items()}
+
+
+def take_state(state: dict, idx) -> dict:
+    idx = np.asarray(idx)
+    return {k: v[idx].copy() for k, v in state.items()}
+
+
 def simulate(patients, inputs: dict, P: dict | None = None) -> dict[str, np.ndarray]:
     """Forward Euler at 1 minute, vectorised over patients.
 
@@ -110,36 +135,48 @@ def simulate(patients, inputs: dict, P: dict | None = None) -> dict[str, np.ndar
     Returns plasma glucose G and subcutaneous glucose Gs [P,T] in mg/dL.
     """
     P = P or build_params(patients)
+    return run(P, inputs, initial_state(P), 0)
+
+
+def run(P: dict, inputs: dict, state: dict, t0, checkpoints: dict | None = None) -> dict[str, np.ndarray]:
+    """Advance `state` (in place) through the inputs, which start at absolute minute t0 (scalar or one per row).
+
+    The per minute inputs are relative to t0; sens_day and egp_day are indexed by absolute day. This is the
+    same loop that generated the data, so a run restarted from a saved state reproduces it exactly, and a
+    run with one input changed is the reference answer to a what if question.
+    checkpoints: {relative minute: None}; filled with a copy of the state at the start of that minute.
+    """
     n, T = inputs["carbs"].shape
     Vg, BW = P["Vg"], P["BW"]
-
-    qsto1 = np.zeros(n); qsto2 = np.zeros(n); qgut = np.zeros(n)
-    Gp = P["Gpb"].copy(); Gt = P["Gtb"].copy()
-    Ip = P["Ipb"].copy(); Il = P["Ilb"].copy()
-    X = np.zeros(n); I1 = P["Ib"].copy(); Id = P["Ib"].copy()
-    Y = np.zeros(n); Ipo = P["Sb"] / P["gamma"]
-    Gs = P["Gb"].copy()
-    E = np.zeros(n); Z = np.zeros(n)
-    M = np.full(n, 1.2) * (P["met_eff"] > 0)
-    Dbar = np.zeros(n)
-    absf = np.ones(n)
-    since_meal = np.full(n, 300.0)
-    G_prev = P["Gb"].copy()
-    fast = np.ones(n)
+    st = state
+    qsto1, qsto2, qgut, Gp, Gt = st["qsto1"], st["qsto2"], st["qgut"], st["Gp"], st["Gt"]
+    Ip, Il, X, I1, Id, Y, Ipo, Gs = st["Ip"], st["Il"], st["X"], st["I1"], st["Id"], st["Y"], st["Ipo"], st["Gs"]
+    E, Z, M, Dbar, absf, since_meal, G_prev, fast = (st["E"], st["Z"], st["M"], st["Dbar"], st["absf"], st["since_meal"],
+                                                     st["G_prev"], st["fast"])
 
     out_G = np.empty((n, T), np.float32)
     out_I = np.empty((n, T), np.float32)
     out_Gs = np.empty((n, T), np.float32)
-    hours = (np.arange(T) % 1440) / 60.0
-    circ = 1 + 0.15 * np.cos(2 * np.pi * (hours - 9.0) / 24)   # best sensitivity mid morning
-    dawn_shape = np.exp(-0.5 * ((hours - 5.5) / 1.4) ** 2)
+    t0 = np.broadcast_to(np.asarray(t0), (n,))
+    scalar_start = bool((t0 == t0[0]).all())
+    rix = np.arange(n)
 
     carbs_all = inputs["carbs"]; absf_all = inputs["absf"]; steps_all = inputs["steps"]
     met_all = inputs["metformin"]; nw_all = inputs["night_work"]
     sens_day, egp_day = inputs["sens_day"], inputs["egp_day"]
+    D = sens_day.shape[1]
 
     for t in range(T):
-        d = t // 1440
+        if checkpoints is not None and t in checkpoints:
+            checkpoints[t] = {k: v.copy() for k, v in zip(STATE_KEYS, (qsto1, qsto2, qgut, Gp, Gt, Ip, Il, X, I1, Id, Y, Ipo,
+                                                                         Gs, E, Z, M, Dbar, absf, since_meal, G_prev, fast))}
+        tab = t0[0] + t if scalar_start else t0 + t
+        hours = (tab % 1440) / 60.0
+        circ = 1 + 0.15 * np.cos(2 * np.pi * (hours - 9.0) / 24)   # best sensitivity mid morning
+        dawn = np.exp(-0.5 * ((hours - 5.5) / 1.4) ** 2)
+        d = np.minimum(tab // 1440, D - 1)
+        sd = sens_day[:, d] if scalar_start else sens_day[rix, d]
+        ed = egp_day[:, d] if scalar_start else egp_day[rix, d]
         cho = carbs_all[:, t] * 1000.0  # mg
         meal = cho > 0
         if meal.any():
@@ -165,11 +202,11 @@ def simulate(patients, inputs: dict, P: dict | None = None) -> dict[str, np.ndar
         # Hepatic output falls late in a long fast and recovers over about three hours after eating.
         target = 1 - P["fast_k"] * np.clip((since_meal - 480) / 600, 0, 1)
         fast += (target - fast) / np.where(target < fast, 60.0, 180.0)
-        EGP = (P["kp1"] * (1 - P["met_eff"] * met_level) * (1 + P["dawn"] * dawn_shape[t]) * fast * egp_day[:, d]
+        EGP = (P["kp1"] * (1 - P["met_eff"] * met_level) * (1 + P["dawn"] * dawn) * fast * ed
                - P["kp2"] * Gp - P["kp3"] * Id)
         # Counter regulation (glucagon, adrenaline) below 70 mg/dL. The UVA/Padova T1D model omits it.
         EGP = np.maximum(EGP, 0) + 0.2 * np.maximum(70 - Gp / Vg, 0)
-        smod = circ[t] * sens_day[:, d] * np.where(nw_all[:, t], 0.9, 1.0)
+        smod = circ * sd * np.where(nw_all[:, t], 0.9, 1.0)
         # Working muscle takes up glucose independently of insulin: about 6 mg/kg/min at a brisk
         # walk, then insulin action stays raised for a couple of hours (Z).
         Uid = ((P["Vm0"] + P["Vmx"] * smod * X * (1 + 0.8 * Z)) * Gt / (P["Km0"] + Gt)
@@ -216,4 +253,7 @@ def simulate(patients, inputs: dict, P: dict | None = None) -> dict[str, np.ndar
         out_G[:, t] = Gp / Vg
         out_Gs[:, t] = Gs
         out_I[:, t] = Ip / P["Vi"]
+    for k, v in zip(STATE_KEYS, (qsto1, qsto2, qgut, Gp, Gt, Ip, Il, X, I1, Id, Y, Ipo, Gs, E, Z, M, Dbar, absf,
+                                 since_meal, G_prev, fast)):
+        st[k] = v
     return {"G": out_G, "Gs": out_Gs, "I": out_I}

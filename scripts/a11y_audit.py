@@ -16,6 +16,7 @@ AXE = ROOT / "frontend" / "node_modules" / "axe-core" / "axe.min.js"
 WEB = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8000"
 PAGES = [("/", "table.ward tbody tr.row"), ("/patient/PTV-0001", ".b-title"), ("/patient/PTV-0001/try", ".lever-card"),
          ("/patient/PTV-0001/record", "table.episodes"), ("/handover", ".handover h1"), ("/digest", ".digest-nums"),
+         ("/festivals", ".fest"), ("/phone/PTV-0001", ".phone"),
          ("/patient/PTV-0003?heart=26", "table.heat"), ("/note/PTV-0001", "article.note"), ("/model", "table.data"),
          ("/share/PTV-0001", ".share h1")]
 

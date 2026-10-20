@@ -177,3 +177,63 @@ def test_first_week_downgrades_alerts(client):
 def test_digest(client):
     d = client.get("/api/digest").json()
     assert d["patients"] == 200 and d["alerts_happened"] <= d["alerts_total"] and 0 <= d["tir"] <= 100
+
+
+def test_reference_check_and_sharpen(client):
+    r = client.post("/api/patients/PTV-0001/reference", json={"walk_minutes": 15, "swap": "millet"}).json()
+    assert r["available"] and r["reference"]["delta"]["peak"] < -20 and r["twin"]["peak"] < -20 and r["agree"]
+    assert r["actual_meal"]["time"] and r["assumed_meal"]["time"]
+    assert not client.post("/api/patients/PTV-0001/reference", json={"missed_dose": True}).json()["available"]
+    s = client.get("/api/patients/PTV-0001/sharpen").json()
+    meal = next(i for i in s["items"] if i["kind"] == "meal")
+    assert "narrow" in meal["text"] and meal["gain"] > 8
+
+
+def test_inside_twin_and_ward_whatif(client):
+    d = client.post("/api/patients/PTV-0001/inside", json={"swap": "millet"}).json()
+    assert d["available"] and len(d["times"]) == 72 and max(d["change"]["G"]) < max(d["usual"]["G"])
+    assert max(d["usual"]["stomach_g"]) > 50
+    w = client.get("/api/ward/whatif?lever=Walk%2015%20min%20after%20the%20meal").json()
+    assert len(w["patients"]) >= 3 and w["hours_saved"] >= 0 and w["mean_peak_drop"] > 0
+    assert client.get("/api/ward/whatif?lever=nonsense").status_code == 422
+
+
+def test_ask_in_plain_words(client):
+    r = client.post("/api/ask", json={"text": "What if he skips rice and walks after dinner for the next week?"}).json()
+    assert r["request"]["swap"] == "roti" and r["request"]["walk_minutes"] == 15 and r["request"]["horizon_h"] == 168
+    assert client.post("/api/ask", json={"text": "hello"}).json().get("unclear")
+
+
+def test_patient_walk_changes_the_replay_and_can_be_undone(client):
+    pid = "PTV-0001"
+    before = client.get(f"/api/patients/{pid}/forecast").json()["status"]["peak"]
+    n = client.post(f"/api/patients/{pid}/messages", json={"key": "nudge", "params": {"peak": 278, "after": 263, "lever": "walk15"}}, headers=NURSE)
+    assert n.status_code == 200
+    a = client.post(f"/api/patients/{pid}/activities", json={"minutes": 15, "when": "after_next_meal"}, headers=PATIENT).json()
+    m = client.post(f"/api/patients/{pid}/messages", json={"key": "will_walk"}, headers=PATIENT).json()
+    msgs = client.get(f"/api/patients/{pid}/messages").json()
+    assert [x["key"] for x in msgs] == ["nudge", "will_walk", "thanks_plan"]
+    assert client.get(f"/api/patients/{pid}/forecast").json()["status"]["peak"] < before - 5  # the forecast knows about the walk
+    client.post("/api/clock", json={"at": "2026-03-15T22:30:00+05:30", "paused": True})
+    try:
+        r = client.get(f"/api/patients/{pid}/walk-result").json()
+        assert r["available"] and r["peak_with"] < r["peak_without"] - 5
+    finally:
+        client.post("/api/clock", json={"at": DEMO, "paused": True})
+    client.delete(f"/api/patients/{pid}/messages/{m['id']}", headers=PATIENT)
+    client.delete(f"/api/patients/{pid}/messages/{n.json()['id']}", headers=NURSE)
+    client.delete(f"/api/patients/{pid}/activities/{a['id']}", headers=PATIENT)
+    assert client.get(f"/api/patients/{pid}/messages").json() == []
+    assert abs(client.get(f"/api/patients/{pid}/forecast").json()["status"]["peak"] - before) < 0.5
+
+
+def test_twin_health_refit_and_festivals(client):
+    h = client.get("/api/patients/PTV-0001/twin-health").json()
+    assert h["status"] in ("good", "drifting") and h["rmse_now"] > 0
+    assert client.post("/api/patients/PTV-0001/refit", headers=NURSE).status_code == 403
+    r = client.post("/api/patients/PTV-0001/refit", headers=DOCTOR).json()
+    assert r["rmse_after"] <= r["rmse_before"] + 0.5
+    assert client.get("/api/patients/PTV-0001/twin-health").json()["refit"]["id"] == r["id"]
+    client.delete(f"/api/patients/PTV-0001/refit/{r['id']}", headers=DOCTOR)
+    f = client.get("/api/festivals").json()["festivals"]
+    assert {x["key"] for x in f} == {"ugadi", "navratri", "eid"} and all(x["patients"] > 0 for x in f)

@@ -52,7 +52,7 @@ function Row({ r, currentId }: { r: WardRow; currentId: string }) {
       <NavLink to={patientLink(r)} className={() => (r.id === currentId ? "active" : "")} aria-current={r.id === currentId ? "page" : undefined}>
         <span className="pl-name">{r.name}</span>
         <span className={`pl-status ${s.alert ? "alert-text" : "muted"}`}>
-          {s.alert && <span className="mark solid" />}{s.text}{r.glucose !== null ? `, ${glu(r.glucose)}` : ""}{r.seen ? ", seen" : ""}
+          {s.alert && <span className="mark solid" />}{[s.text, r.glucose !== null ? glu(r.glucose) : "", r.seen ? "seen" : ""].filter(Boolean).join(", ")}
         </span>
       </NavLink>
     </li>

@@ -877,3 +877,103 @@ table.handover-done th { text-align: left; font-size: 12.5px; letter-spacing: 0.
   table.ward tr.group-row { display: block; }
   table.ward tr.group-row th { display: block; width: 100%; padding: 16px 4px 6px; }
 }
+
+/* Version 1.5: reference check, sharpening, inside the twin, plain words, the patient's phone -- */
+
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.link-small { font-size: 14px; color: var(--ink-2); text-decoration: underline; text-decoration-color: var(--rule-strong); text-underline-offset: 3px; align-self: center; }
+.b-reply { font-size: 15.5px; margin-top: 6px; color: var(--accent); font-weight: 500; }
+.walk-note { font-size: 15.5px; color: var(--ink-2); border-left: 3px solid var(--accent); padding: 6px 12px; margin: 4px 0 12px; }
+
+/* Plain words */
+.ask { margin: 4px 0 18px; }
+.ask-row { display: flex; gap: 8px; }
+.ask-row input { flex: 1; font: inherit; font-size: 16.5px; padding: 10px 14px; border: 1px solid var(--rule-strong); border-radius: 6px; background: var(--paper); color: var(--ink); }
+.ask-examples { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.ask-result { margin-top: 8px; display: grid; gap: 4px; }
+.chip.static { cursor: default; margin-right: 4px; background: var(--accent-wash); border-color: transparent; color: var(--ink); }
+
+/* What would sharpen this forecast */
+.sharpen { border: 1px dashed var(--rule-strong); border-radius: 6px; padding: 10px 16px; margin: 6px 0 16px; }
+.sharpen h3 { margin-bottom: 4px; }
+.sharpen ul { margin: 0; padding-left: 18px; }
+.sharpen li { margin: 6px 0; font-size: 16px; }
+
+/* Reference check */
+.refcheck { border: 1px solid var(--rule); border-radius: 6px; padding: 14px 18px; margin: 18px 0 8px; background: var(--paper); }
+.refcheck-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.refcheck-head p { margin: 2px 0 0; max-width: 640px; }
+.refcheck-nums { display: flex; gap: 44px; flex-wrap: wrap; margin: 12px 0 6px; }
+.refcheck .stale { opacity: 0.55; }
+
+/* Inside the twin */
+.in-controls { display: flex; gap: 12px; align-items: center; margin-bottom: 6px; }
+.in-controls input[type="range"] { flex: 1; }
+.in-time { font-size: 18px; font-weight: 500; min-width: 52px; }
+.in-story { font-size: 15.5px; color: var(--ink-2); min-height: 2.6em; }
+.in-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+.in-fig { margin: 0; }
+.in-fig figcaption { font-family: var(--serif); font-size: 16px; margin-bottom: 4px; }
+.in-fig svg { width: 100%; height: auto; display: block; }
+.in-box { fill: var(--paper); stroke: var(--rule-strong); stroke-width: 1; }
+.in-fill { fill: var(--accent-wash); }
+.in-label { font-size: 13px; fill: var(--ink); font-weight: 500; }
+.in-value { font-size: 13px; fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+.in-small { font-size: 11.5px; fill: var(--ink-3); }
+.in-flow { stroke: var(--accent); stroke-linecap: round; opacity: 0.8; }
+.in-arrow { fill: var(--accent); }
+.in-spark { width: 100%; height: 70px; margin-top: 8px; border-top: 1px solid var(--rule); }
+.in-line { fill: none; stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.in-line.usual { stroke: var(--series-grey); }
+.in-line.change { stroke: var(--accent); }
+.in-now { stroke: var(--ink-3); stroke-width: 1; vector-effect: non-scaling-stroke; }
+
+/* Listen */
+.listen { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+/* The patient's phone */
+.phone-page { max-width: 760px; margin: 0 auto; padding: 20px 16px 48px; }
+.phone-tools { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+.phone { max-width: 400px; margin: 0 auto; border: 1px solid var(--rule-strong); border-radius: 28px; padding: 18px 14px 14px; background: var(--paper-2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08); }
+.phone-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 0 6px 10px; border-bottom: 1px solid var(--rule); }
+.thread { display: grid; gap: 10px; padding: 14px 2px; min-height: 280px; }
+.bubble { max-width: 86%; padding: 10px 12px; border-radius: 14px; font-size: 16.5px; line-height: 1.45; }
+.bubble p { margin: 0; }
+.bubble.team { background: var(--paper); border: 1px solid var(--rule); border-bottom-left-radius: 4px; justify-self: start; }
+.bubble.you { background: var(--accent); color: var(--paper); border-bottom-right-radius: 4px; justify-self: end; }
+.bubble .b-foot { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-top: 6px; color: var(--ink-3); }
+.bubble.you .b-foot { color: var(--paper); opacity: 0.85; }
+.bubble .btn { font-size: 13.5px; padding: 3px 10px; }
+.replies { display: grid; gap: 8px; padding: 6px 2px 10px; }
+.replies .btn { font-size: 16px; padding: 10px; border-radius: 20px; }
+.phone-foot { color: var(--ink-3); margin: 6px 6px 0; }
+
+/* Festivals and ward what if */
+.fest { margin-top: 24px; padding-top: 6px; border-top: 1px solid var(--rule); }
+.fest h2 .muted { font-family: var(--sans); font-size: 16px; }
+table.fest-table { width: 100%; }
+table.fest-table th { text-align: left; font-size: 12.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+.ward-whatif { margin: 0 0 12px; }
+.tag { display: inline-block; margin-left: 8px; padding: 0 7px; border: 1px solid var(--rule-strong); border-radius: 999px; font-size: 12px; color: var(--ink-2);
+  vertical-align: 2px; }
+
+/* Twin fit */
+.fit { border-left: 3px solid var(--rule-strong); padding: 6px 12px; margin: 0 0 12px; }
+.fit.good { border-left-color: var(--accent); }
+.fit.drifting { border-left-color: var(--ink); background: var(--paper-2); }
+.fit p { margin: 4px 0 8px; }
+
+@media (max-width: 760px) {
+  .refcheck-nums { gap: 22px; }
+  .in-pair { grid-template-columns: 1fr; }
+  .ask-row { flex-direction: column; }
+}
+@media print {
+  .ask, .refcheck, .inside, .listen, .sharpen { display: none !important; }
+}
+input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+.ward-whatif table.log td:first-child, table.fest-table td:first-child, table.fest-table th:first-child { width: auto; white-space: nowrap; padding-right: 18px; }
+.ask-result { display: block; }
+.ask-result > * { margin-top: 4px; }
+.ask-result .chip.static { display: inline-block; margin: 2px 4px 2px 0; }

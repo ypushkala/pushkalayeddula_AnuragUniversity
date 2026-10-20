@@ -182,6 +182,12 @@ def build(pp: Prepared, ks: np.ndarray, H: int, future: str = "routine"):
                 af[b, W + j:] = a
             for j in expected_doses(pp, int(k), H):
                 dose[b, W + j] += pp.dose_unit
+            # Walks someone has said will happen (for example "I will walk after dinner").
+            t = int(k) * STEP
+            for start, minutes in pp.extra.get("walks", []):
+                j0, j1 = int((start - t) // STEP), int(np.ceil((start + minutes - t) / STEP))
+                if j1 > 0 and j0 < H:
+                    A[b, W + max(j0, 0): W + min(j1, H)] = np.maximum(A[b, W + max(j0, 0): W + min(j1, H)], 1.0)
     obs[:, W + 1:] = np.nan
     return bergman.Inputs(carbs, af, A, dose, smod, dawn), obs
 
@@ -216,6 +222,7 @@ class Scenario:
     insulin_bolus_units: float = 0.0     # rapid acting insulin with each targeted main meal
     insulin_basal_units: float = 0.0     # long acting insulin per day, assumed at steady state
     metformin_shift_hours: float = 0.0   # move the evening metformin dose
+    carb_factor: float = 1.0             # a bigger or smaller meal than usual (uncertainty about the meal)
 
     def is_baseline(self) -> bool:
         return self == Scenario(scope=self.scope)
@@ -271,6 +278,7 @@ def apply_scenario(pp: Prepared, k: int, H: int, sc: Scenario):
     main = [m for m in meals if m[1] >= MAIN_MEAL_G]
     info = {"target_step": None, "target_carbs": None, "meals_changed": 0}
     factor, a_new = SWAPS.get(sc.swap, (1.0, None))
+    factor *= sc.carb_factor
     shift = int(round(sc.shift_hours * 60 / STEP))
     walk_starts = []
     if sc.scope == "all":
@@ -324,6 +332,27 @@ def apply_scenario(pp: Prepared, k: int, H: int, sc: Scenario):
                 _write_future(u, _future_meals(u) + [[W + j, 30.0, AF["tea_snack"]]])
                 break
     return u, obs, x0, info
+
+
+def trajectory(pp: Prepared, theta: np.ndarray, k: int, H: int, sc: Scenario) -> dict:
+    """Every twin state over the horizon (for the "inside the twin" view): stomach, gut, glucose, insulin, action."""
+    u, obs, x0, info = apply_scenario(pp, k, H, sc)
+    s = pp.s
+    p = bergman.params_dict(np.atleast_2d(theta), s.bw, float(s.on_metformin))
+    _, x = bergman.run_rk4(p, x0, u.window(0, W), obs=obs[:, :W], obs_until=W)
+    if not np.isnan(obs[0, W]):
+        x[0] += 0.5 * (obs[0, W] - x[0])
+    rec: list = []
+    fut = u.window(W)
+    bergman.run_rk4(p, x, fut, record=rec)
+    X = np.stack(rec)[:, :, 0]  # [H, 7]
+    th = dict(zip(bergman.PARAMS, np.atleast_2d(theta)[0]))
+    ka = th["ka"] * fut.af[0]
+    ra = th["cf"] * bergman.POP["f"] * ka * X[:, 4] * 1000.0 / (bergman.POP["Vg"] * float(s.bw))
+    G, Xa, I, E = X[:, 0], X[:, 1], X[:, 2], X[:, 5]
+    uptake = (th["SG"] + Xa) * G + th["eE"] * E * G
+    return {"G": G, "stomach_g": X[:, 3], "gut_g": X[:, 4], "into_blood": ra, "insulin": I, "action": Xa,
+            "activity": E, "out_of_blood": uptake, "metformin": X[:, 6], "info": info}
 
 
 def simulate_scenario(pp: Prepared, theta: np.ndarray, k: int, H: int, sc: Scenario, method: str = "ivp") -> tuple[np.ndarray, dict]:

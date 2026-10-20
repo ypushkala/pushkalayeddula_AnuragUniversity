@@ -17,7 +17,7 @@ export function ModelCard() {
   return (
     <article className="doc">
       <div className="label">Model card</div>
-      <h1>Prativimb hybrid patient twin, version 1.4</h1>
+      <h1>Prativimb hybrid patient twin, version 1.5</h1>
       <p className="statement">Decision support only, not a diagnosis. Every forecast and flag needs a clinician's judgement.</p>
 
       <h2>Intended use</h2>
@@ -128,6 +128,34 @@ export function ModelCard() {
             alert as seen for a set time, keeps possible highs off the ward list and out of notifications, and the digest counts them instead.</p>
         </>
       )}
+
+      {mc.counterfactual && (() => {
+        const cf = mc.counterfactual, o = cf.overall;
+        return (
+          <>
+            <h2>Are the what if answers right?</h2>
+            <p>In real life nobody sees what would have happened had the patient walked after dinner. Here we can: the synthetic patients come
+              from a richer, deterministic simulator (UVA/Padova based) that the twin never sees. For {cf.cases} moments in {cf.patients} test patients,
+              40 minutes before a real main meal, we re-ran that simulator with each change applied to what the patient actually ate and compared
+              the effect with the twin's prediction. The twin saw only data up to that moment and the declared routine.</p>
+            <table className="data num">
+              <thead><tr><th>Change</th><th>Twin, change in peak</th><th>Reference</th><th>Direction agrees</th><th>Typical error</th></tr></thead>
+              <tbody>
+                {cf.per_lever.map((x: any) => (
+                  <tr key={x.label}><td>{x.label}</td><td>{x.twin_mean > 0 ? "+" : ""}{fmt(x.twin_mean)} mg/dL</td>
+                    <td>{x.reference_mean > 0 ? "+" : ""}{fmt(x.reference_mean)} mg/dL</td><td>{pct(x.direction_agree, 0)}</td><td>{fmt(x.mae)} mg/dL</td></tr>
+                ))}
+              </tbody>
+            </table>
+            <p>Overall the twin gets the direction right {pct(o.direction_agree, 0)} of the time (typical error {fmt(o.mae, 1)} mg/dL, correlation {fmt(o.corr, 2)}),
+              and the change that helps most according to the reference is in the twin's top two {pct(o.best_in_top2, 0)} of the time. Two weaknesses:
+              it slightly underestimates walks, and it misses that eating an hour earlier usually makes the peak worse when the previous meal has not settled.</p>
+            <figure><img src="/figures/counterfactual_check.png" alt="Twin against reference simulator" /><figcaption>Each point is one change at one moment. On the diagonal the twin was exact.</figcaption></figure>
+            <p className="small muted">This tests the twin's structure against a different model of the same physiology; it is necessary, not sufficient.
+              Sleep, missed doses, night shifts and insulin act through whole day factors in the reference and are not checked here.</p>
+          </>
+        );
+      })()}
 
       <h2>A new patient's first week</h2>
       <p>A new patient's forecast starts from the health record alone (HbA1c, BMI, fasting glucose, age, TCF7L2 genotype, medicines). Across
