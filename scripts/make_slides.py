@@ -110,8 +110,8 @@ def spec(m: dict, cs: dict) -> list[Slide]:
         Rule(0.9, 3.65, 11.5, INK, 1.0),
         Text(0.9, 3.95, 11, "Hybrid digital twin for Type 2 diabetes and cardiovascular risk, built for Indian patients.", 16, INK2),
         Text(0.9, 4.45, 11, "Happiest Health hackathon. Digital Twin track, Phase 1: prototype and code.", 14, INK3),
-        Text(0.9, 5.45, 11, "<TeamName>, <CollegeName> / <Incubator>", 15, INK),
-        Text(0.9, 5.9, 11.5, "<Member 1, role>   <Member 2, role>   <Member 3, role>   <Member 4, role>   <team email>", 12.5, INK2),
+        Text(0.9, 5.45, 11, "Team pushkalayeddula, Anurag University", 15, INK),
+        Text(0.9, 5.9, 11.5, "Built by Pushkala Yeddula: data, twin, models, dashboard, tests and documents", 12.5, INK2),
         Text(0.9, 6.55, 11.5, "Prativimb is Sanskrit for reflection. Patient data shown is synthetic; real data validation uses open access CGMacros.", 11, INK3),
     ]))
 

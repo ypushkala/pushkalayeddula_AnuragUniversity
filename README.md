@@ -8,16 +8,17 @@ Happiest Health hackathon, Digital Twin track, Phase 1: prototype and code submi
 
 ## 1. Team details
 
-| Name | Role | Email |
-|---|---|---|
-| `<Member 1>` | `<Role, for example lead and modelling>` | `<email>` |
-| `<Member 2>` | `<Role>` | `<email>` |
-| `<Member 3>` | `<Role>` | `<email>` |
-| `<Member 4>` | `<Role>` | `<email>` |
+**Team name:** pushkalayeddula
 
-**College / Incubator:** `<CollegeName>`, `<City>` / `<Incubator name, if any>`
+**College:** Anurag University, Hyderabad, Telangana
 
-**Team name:** `<TeamName>` (repository folder: `<TeamName>_<CollegeName>`)
+**Incubator:** none
+
+Prativimb is a one person project. Everything in this repository was planned, built and tested by one developer:
+
+| Member | What they did |
+|---|---|
+| **Pushkala Yeddula** ([@ypushkala](https://github.com/ypushkala)) | The whole project: the idea and research, the synthetic Indian patient data, the digital twin and the machine learning models, the checks of how far the results can be trusted, the clinician dashboard and the patient's phone view, the tests, the documents, the slides and the demo video |
 
 ## 2. Project title
 
@@ -111,9 +112,31 @@ Details: [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md).
 
 ## 7. Demo video
 
-**Unlisted YouTube link:** `<https://youtu.be/...>` (about 20 minutes).
+**Watch the demo:** link coming soon. The video will be an unlisted YouTube video of about 20 minutes, and its link will be added here.
 
-The timed script is in [`docs/VIDEO_SCRIPT.md`](docs/VIDEO_SCRIPT.md).
+<!-- Replace the line above with: **Watch the demo:** https://youtu.be/... (unlisted, about 20 minutes) -->
+
+What the video covers:
+
+| Time | Part |
+|---|---|
+| 00:00 | Introduction: what Prativimb is and why a twin |
+| 01:00 | The problem: diabetes and heart risk in India |
+| 02:30 | Why a twin, and the four ideas behind it |
+| 04:00 | Architecture |
+| 05:30 | The synthetic Indian patients and how they are made |
+| 07:00 | The ward: who needs attention and why |
+| 08:15 | Ramesh: tonight's high glucose alert, its reasons and its track record |
+| 10:30 | Try a change: what helps Ramesh, checked against the reference simulator, a look inside the twin, and the message to his phone |
+| 12:30 | Fatima: a low before iftar and the rebound after it |
+| 13:45 | Suresh: the heart risk week before an event |
+| 14:45 | Clinical note, festival planner, ward what if and shift handover |
+| 15:30 | Results: forecast accuracy, alert load, and how far to trust each part |
+| 17:00 | Real CGM data (CGMacros): what transfers and what does not |
+| 18:15 | Privacy, safety and limits |
+| 19:15 | Next steps |
+
+The full spoken script, with every click, is in [`docs/VIDEO_SCRIPT.md`](docs/VIDEO_SCRIPT.md).
 
 ## 8. Architecture diagram
 
@@ -285,17 +308,17 @@ Each item of the submission form, and where it is in this README or repository.
 
 | Form item | Where | Status |
 |---|---|---|
-| Team details | [Section 1](#1-team-details) | To fill in: names, roles, emails |
-| College / Incubator information | [Section 1](#1-team-details) | To fill in |
+| Team details | [Section 1](#1-team-details) | Done |
+| College / Incubator information | [Section 1](#1-team-details) | Done (Anurag University; no incubator) |
 | Project title | [Section 2](#2-project-title) | Done |
 | Problem statement | [Section 3](#3-problem-statement) | Done |
 | Healthcare use case | [Section 4](#4-healthcare-use-case) | Done |
 | Technical stack | [Section 5](#5-technical-stack) | Done |
 | AI/ML model or framework details | [Section 6](#6-aiml-model-and-framework-details), [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md) | Done |
-| 15 to 20 minute demo video, unlisted on YouTube, link in the README | [Section 7](#7-demo-video), script in [`docs/VIDEO_SCRIPT.md`](docs/VIDEO_SCRIPT.md) | To do: record, upload as Unlisted, paste the link |
+| 15 to 20 minute demo video, unlisted on YouTube, link in the README | [Section 7](#7-demo-video), script in [`docs/VIDEO_SCRIPT.md`](docs/VIDEO_SCRIPT.md) | Section ready; link to be added after the upload (Unlisted) |
 | Open source licence details | [Section 13](#13-open-source-licence-details), [`LICENSE`](LICENSE) | Done (MIT) |
 | Architecture diagram in PDF or PPT | [Section 8](#8-architecture-diagram), [`docs/architecture.pdf`](docs/architecture.pdf) | Done |
-| Presentation in PDF or PPT covering project details and outcomes | [Section 9](#9-presentation), [`docs/presentation.pdf`](docs/presentation.pdf), [`docs/presentation.pptx`](docs/presentation.pptx) | Done (team slide to fill in) |
-| All files and links publicly accessible without additional permissions | Every link above is a relative link inside this repository; the video link must be Unlisted, not Private | To check once the repository is public |
+| Presentation in PDF or PPT covering project details and outcomes | [Section 9](#9-presentation), [`docs/presentation.pdf`](docs/presentation.pdf), [`docs/presentation.pptx`](docs/presentation.pptx) | Done |
+| All files and links publicly accessible without additional permissions | Every link above is a relative link inside this repository; the video link must be Unlisted, not Private | Repository is public; video to be set to Unlisted when uploaded |
 
 Also in the repository: source code and 49 tests, one command data regeneration (`make all`), [`docs/DATA.md`](docs/DATA.md), screenshots of every screen in [`docs/screenshots/`](docs/screenshots/), and the evaluation reports in [`reports/`](reports/) ([`metrics.md`](reports/metrics.md), [`followup.md`](reports/followup.md), [`counterfactual.md`](reports/counterfactual.md), [`real_data.md`](reports/real_data.md)).

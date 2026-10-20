@@ -8,7 +8,7 @@ The same content, with live numbers, is on the dashboard at `/model`. Full metri
 
 | | |
 |---|---|
-| Developers | `<TeamName>`, `<CollegeName>` |
+| Developers | Pushkala Yeddula (team pushkalayeddula), Anurag University |
 | Version | 1.1, October 2026 |
 | Type | Hybrid: mechanistic ODE twin per patient, gradient boosted residual model, conformal intervals; separate cardiovascular ensemble |
 | Code | `prativimb/twin/` (twin), `prativimb/ml/` (residual, conformal, cardio, explanations) |

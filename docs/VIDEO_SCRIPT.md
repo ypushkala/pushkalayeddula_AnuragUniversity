@@ -33,7 +33,7 @@ Unlisted YouTube upload. Screen at 1920 x 1080, browser zoom 100%, light theme u
 
 Slide 1.
 
-"We are `<TeamName>` from `<CollegeName>`. This is Prativimb, Sanskrit for reflection: a digital twin of a patient that you can question. Most models tell you what is likely to happen next. A twin can also tell you what would happen if something changed: a walk after dinner, millets instead of rice, a missed dose. Everything you will see runs on synthetic, fictional patients."
+"I am Pushkala Yeddula from Anurag University, and I built this project on my own. This is Prativimb, Sanskrit for reflection: a digital twin of a patient that you can question. Most models tell you what is likely to happen next. A twin can also tell you what would happen if something changed: a walk after dinner, millets instead of rice, a missed dose. Everything you will see runs on synthetic, fictional patients."
 
 ## 01:00 The problem
 
