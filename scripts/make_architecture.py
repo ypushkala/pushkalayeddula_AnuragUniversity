@@ -52,13 +52,14 @@ def main() -> None:
     h = 1.55
     X = [c[0] for c in cols]
     ehr = box(ax, X[0], T, 2.25, h, "EHR (FHIR R4 bundles)", ["Problems, ICD-10", "Labs and vitals, LOINC", "Medications, ATC", "Genetic markers, consent"])
-    wear = box(ax, X[0], M, 2.25, h, "Wearable stream", ["CGM every 5 min", "Heart rate and steps, 1 min", "Sleep stages, nightly RMSSD", "Apple Health, Google Fit"])
-    logs = box(ax, X[0], L, 2.25, h, "Patient reported", ["Meal log with carbohydrate", "Dose confirmations", "Declared routine and fasts"])
-    gen = box(ax, X[0], B, 2.25, 1.38, "Synthetic generator", ["UVA/Padova physiology", "simglucose sensor noise", "Indian diet, Ramadan, shifts", "Seeded, one command"])
+    wear = box(ax, X[0], M, 2.25, h, "Wearable stream", ["CGM every 5 min", "Heart rate and steps, 1 min", "Sleep stages, nightly RMSSD", "Apple Health, Google Fit, Health Connect"])
+    logs = box(ax, X[0], L, 2.25, h, "Patient reported", ["Meal log with carbohydrate", "Dose confirmations", "Declared routine and fasts", "Replies from the patient's phone"])
+    gen = box(ax, X[0], B, 2.25, 1.38, "Synthetic generator", ["UVA/Padova physiology", "Indian diet, Ramadan, shifts", "Restartable: the reference", "for checking what ifs"])
 
-    parse = box(ax, X[1], T, 2.3, h, "Parsers and adapters", ["FHIR bundle parser", "Apple Health export.xml", "Google Fit datasets", "Unit checks (mmol/L)"])
+    parse = box(ax, X[1], T, 2.3, h, "Parsers and adapters", ["FHIR bundle parser", "Apple Health, Google Fit,", "Health Connect adapters", "Unit checks (mmol/L)"])
     db = box(ax, X[1], M, 2.3, h, "DuckDB", ["EHR tables and features", "5 minute wearable grid", "Logs, sleep summaries", "Seven day windows"])
-    replay = box(ax, X[1], L, 2.3, h, "Replay service", ["Demo clock, pause, speed", "Streams readings to the", "dashboard over WebSocket"])
+    replay = box(ax, X[1], L, 2.3, h, "Replay service", ["Demo clock, pause, speed", "WebSocket stream", "Withdrawn consent stops a source", "Logged walks via the reference"])
+    store = box(ax, X[1], B, 2.3, 1.38, "Clinical store", ["Seen, calls, checks, meals, plans,", "consent, messages, via FastAPI", "Append only audit log", "Undo for every change"])
 
     prior = box(ax, X[2], T, 2.35, h, "EHR priors", ["HbA1c, BMI, fasting glucose", "TCF7L2, diagnosis, age", "give a cold start twin"])
     cal = box(ax, X[2], M, 2.35, h, "Twin calibration", ["Days 1 to 7 of each patient", "MAP least squares (scipy)", "8 personal parameters", "about 1 s per patient"], accent=True)
@@ -70,10 +71,10 @@ def main() -> None:
 
     alerts = box(ax, X[4], T, 2.3, h, "Alert engine", ["Watch: point above 180", "Alert: lower bound above 180", "Low glucose", "Cardiovascular flag"])
     expl = box(ax, X[4], M, 2.3, h, "Explainability", ["Exact Shapley, twin inputs", "TreeSHAP, residual model", "mg/dL, then one plain", "clinical sentence"])
-    whatif = box(ax, X[4], B, 2.3, 1.38, "What-if simulator", ["Walk, food swap, timing", "Missed dose, sleep, shift", "6 h counterfactual"])
+    whatif = box(ax, X[4], B, 2.3, 1.38, "What-if simulator", ["Walk, food, timing, insulin", "Tonight, 24 hours, 7 days", "Checked against the generator", "Plans checked a week later"])
 
-    apib = box(ax, X[5], T, 2.0, h, "FastAPI", ["REST and WebSocket", "Pydantic, FHIR shaped", "SOAP note PDF"])
-    dash = box(ax, X[5], L, 2.0, M + h - L, "Doctor dashboard", ["Ward triage", "Patient twin", "What-if", "Cardio week", "Clinical note", "Model card", "React, Observable Plot"])
+    apib = box(ax, X[5], T, 2.0, h, "FastAPI", ["REST and WebSocket", "Role checks: doctor,", "nurse, patient", "SOAP note PDF"])
+    dash = box(ax, X[5], B, 2.0, M + h - B, "Dashboard and phone", ["Ward by urgency, reasons", "Today, Try a change, Record", "Earlier alerts, outcomes", "Handover, daily digest", "Festival planner", "Patient phone, Hindi,", "Tamil, English, Listen", "Consent on screen", "React, Observable Plot"])
 
     ac = style.ACCENT
     arrow(ax, gen, logs, "t", "b")
@@ -87,7 +88,8 @@ def main() -> None:
     arrow(ax, resid, expl, "r", "l")
     arrow(ax, phys, whatif, "b", "l", rad=0.25)
     arrow(ax, alerts, apib); arrow(ax, apib, dash, "b", "t")
-    arrow(ax, expl, dash, "r", "l"); arrow(ax, whatif, dash, "r", "l", rad=0.15)
+    arrow(ax, expl, dash, "r", "l"); arrow(ax, whatif, dash, "r", "l")
+    arrow(ax, store, replay, "t", "b")
 
     ax.add_patch(Rectangle((0.42, 0.28), 0.18, 0.12, facecolor="#E9EFEC", edgecolor=style.ACCENT, lw=1.0))
     ax.text(0.7, 0.34, "Hybrid core: physics gives plausibility and extrapolation, the residual model gives accuracy, "

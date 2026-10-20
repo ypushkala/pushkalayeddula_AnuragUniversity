@@ -91,9 +91,9 @@ More screens (clinical note, model card, daily digest, sign in, patient view in 
 | Data | pandas, PyArrow (Parquet), DuckDB, FHIR R4 shaped JSON |
 | Synthetic data | Own Synthea style EHR generator, UVA/Padova model with simglucose parameters and CGM noise |
 | API | FastAPI, Pydantic (FHIR shaped schemas), Uvicorn, WebSocket replay, ReportLab (PDF) |
-| Dashboard | React 18, Vite 5, Observable Plot, IBM Plex Serif and Sans |
+| Dashboard | React 18, Vite 5, Observable Plot, IBM Plex Serif and Sans, Noto Sans Devanagari and Tamil, Web Speech API (Listen) |
 | Docs | Matplotlib (charts and architecture as code), python-pptx, Playwright (screenshots) |
-| Quality | pytest (34 tests), style check for dashes and emoji, axe-core accessibility audit (WCAG 2.1 AA, clean) |
+| Quality | pytest (49 tests), style check for dashes and emoji, axe-core accessibility audit (WCAG 2.1 AA, clean on every screen in both themes) |
 | Deployment | Docker Compose, or a Makefile without Docker |
 
 ## 6. AI/ML model and framework details
@@ -103,7 +103,9 @@ More screens (clinical note, model card, daily digest, sign in, patient view in 
 3. **Conformal layer.** Conformalised quantile regression (Romano et al. 2019) with quantile LightGBMs, calibrated on 40 held out patients: 90% intervals for display; the alert uses the lower bound of the 50% interval ("at least a 75% chance of exceeding 180"), a level chosen on calibration patients as the most sensitive with at most 0.10 false alarms per patient day.
 4. **Cardiovascular anomaly ensemble.** Per patient baseline z scores and an isolation forest (unsupervised) plus a LightGBM classifier trained on synthetic labelled episodes, stacked by logistic regression on calibration patients; threshold at 95% specificity.
 5. **Low glucose model.** A LightGBM classifier for glucose below 70 mg/dL within 60 minutes, trained on labels cleaned by a compression artefact filter (fast, symmetric overnight dips), with its threshold chosen on calibration patients.
-6. **Explainability.** Exact Shapley values over six twin inputs (64 batched simulations) plus TreeSHAP of the residual model, in mg/dL of predicted peak, turned into one sentence such as *"Expected dinner (about 130 g carbohydrate at 20:15), reduced insulin sensitivity (HbA1c 8.4%, BMI 27.1) and short sleep (4.9 h, last 3 nights) and night shift are driving this forecast."* Cardiovascular factors are worded against the patient's own baseline.
+6. **Reference check of what ifs.** The data generator's UVA/Padova physiology restarts from saved state, so every what if can be re-run in a richer model the twin never sees (`prativimb/data/reference.py`, `prativimb/eval/counterfactual.py`).
+7. **Plain words to settings.** A phrase matcher (`prativimb/api/ask.py`) turns a question into what if settings offline; an optional language model (claude-haiku-5-5, only if an API key is set) fills the same settings and never produces numbers.
+8. **Explainability.** Exact Shapley values over six twin inputs (64 batched simulations) plus TreeSHAP of the residual model, in mg/dL of predicted peak, turned into one sentence such as *"Expected dinner (about 130 g carbohydrate at 20:15), reduced insulin sensitivity (HbA1c 8.4%, BMI 27.1) and short sleep (4.9 h, last 3 nights) and night shift are driving this forecast."* Cardiovascular factors are worded against the patient's own baseline.
 
 Details: [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md).
 
@@ -279,15 +281,21 @@ Third party components and their licences:
 
 ## 15. Submission checklist
 
-- [x] README with every required section, in order
-- [x] Source code, tests and one command data regeneration
-- [x] `LICENSE` (MIT) and third party licences listed
-- [x] `docs/architecture.pdf` and `docs/architecture.png`
-- [x] `docs/presentation.pptx` and `docs/presentation.pdf`
-- [x] `docs/DATA.md`, `docs/MODEL_CARD.md`, `docs/VIDEO_SCRIPT.md`
-- [x] Screenshots of every screen in `docs/screenshots/`
-- [x] `reports/metrics.md`, `reports/metrics.json`, `reports/figures/`
-- [ ] Team names, roles, emails and college filled in (sections 1 and the team slide)
-- [ ] Demo video uploaded as **Unlisted** on YouTube and the link added in section 7 and the team slide
-- [ ] Repository renamed to `<TeamName>_<CollegeName>` and set to **public**
-- [ ] Every link above opened from a logged out browser to confirm it is publicly accessible
+Each item of the submission form, and where it is in this README or repository.
+
+| Form item | Where | Status |
+|---|---|---|
+| Team details | [Section 1](#1-team-details) | To fill in: names, roles, emails |
+| College / Incubator information | [Section 1](#1-team-details) | To fill in |
+| Project title | [Section 2](#2-project-title) | Done |
+| Problem statement | [Section 3](#3-problem-statement) | Done |
+| Healthcare use case | [Section 4](#4-healthcare-use-case) | Done |
+| Technical stack | [Section 5](#5-technical-stack) | Done |
+| AI/ML model or framework details | [Section 6](#6-aiml-model-and-framework-details), [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md) | Done |
+| 15 to 20 minute demo video, unlisted on YouTube, link in the README | [Section 7](#7-demo-video), script in [`docs/VIDEO_SCRIPT.md`](docs/VIDEO_SCRIPT.md) | To do: record, upload as Unlisted, paste the link |
+| Open source licence details | [Section 13](#13-open-source-licence-details), [`LICENSE`](LICENSE) | Done (MIT) |
+| Architecture diagram in PDF or PPT | [Section 8](#8-architecture-diagram), [`docs/architecture.pdf`](docs/architecture.pdf) | Done |
+| Presentation in PDF or PPT covering project details and outcomes | [Section 9](#9-presentation), [`docs/presentation.pdf`](docs/presentation.pdf), [`docs/presentation.pptx`](docs/presentation.pptx) | Done (team slide to fill in) |
+| All files and links publicly accessible without additional permissions | Every link above is a relative link inside this repository; the video link must be Unlisted, not Private | To check once the repository is public |
+
+Also in the repository: source code and 49 tests, one command data regeneration (`make all`), [`docs/DATA.md`](docs/DATA.md), screenshots of every screen in [`docs/screenshots/`](docs/screenshots/), and the evaluation reports in [`reports/`](reports/) ([`metrics.md`](reports/metrics.md), [`followup.md`](reports/followup.md), [`counterfactual.md`](reports/counterfactual.md), [`real_data.md`](reports/real_data.md)).
